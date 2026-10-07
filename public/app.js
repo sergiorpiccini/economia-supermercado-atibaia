@@ -22,7 +22,7 @@ function getAuthHeaders() {
   return headers;
 }
 
-// Inicializa usuário logado ou faz login inicial
+// Inicializa usuário logado
 async function inicializarUsuario() {
   const headerContainer = document.getElementById('user-header-container');
   if (!headerContainer) return;
@@ -42,24 +42,6 @@ async function inicializarUsuario() {
     }
   }
 
-  // Auto-login no primeiro acesso se ainda não tiver conta
-  if (!currentUser) {
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'admin@atibaia.com', senha: '123456' })
-      });
-      const data = await res.json();
-      if (data.sucesso) {
-        currentUser = data.usuario;
-        authToken = data.token;
-        localStorage.setItem('currentUser', JSON.stringify(currentUser));
-        localStorage.setItem('authToken', authToken);
-      }
-    } catch (err) {}
-  }
-
   renderizarUserHeader();
 }
 
@@ -71,15 +53,15 @@ function renderizarUserHeader() {
     const primeiroNome = currentUser.nome ? currentUser.nome.split(' ')[0] : 'Usuário';
     const bairroTexto = currentUser.bairro ? ` • ${currentUser.bairro}` : '';
     headerContainer.innerHTML = `
-      <button onclick="abrirModalAuth()" class="flex items-center gap-1.5 bg-emerald-700/90 hover:bg-emerald-800 text-white px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition border border-emerald-500/80 shadow-xs" title="Perfil / Trocar de Conta">
+      <button onclick="abrirModalAuth()" class="flex items-center gap-1.5 bg-emerald-700/90 hover:bg-emerald-800 text-white px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition border border-emerald-500/80 shadow-xs" title="Perfil / Minha Conta">
         <i data-lucide="user-check" class="w-3.5 h-3.5 text-emerald-200"></i>
         <span class="max-w-[130px] truncate">${escapeHtml(primeiroNome)}${escapeHtml(bairroTexto)}</span>
       </button>
     `;
   } else {
     headerContainer.innerHTML = `
-      <button onclick="abrirModalAuth()" class="flex items-center gap-1 bg-white hover:bg-slate-100 text-emerald-800 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs">
-        <i data-lucide="log-in" class="w-3.5 h-3.5"></i> Entrar
+      <button onclick="abrirModalAuth()" class="flex items-center gap-1.5 bg-white hover:bg-slate-100 text-emerald-800 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs">
+        <i data-lucide="log-in" class="w-3.5 h-3.5"></i> Entrar / Criar Conta
       </button>
     `;
   }
@@ -88,9 +70,33 @@ function renderizarUserHeader() {
 
 // Modal de Autenticação
 function abrirModalAuth() {
+  const sessaoAtiva = document.getElementById('auth-sessao-ativa');
+  const naoLogado = document.getElementById('auth-nao-logado-container');
+  const titulo = document.getElementById('auth-modal-titulo');
+  const sub = document.getElementById('auth-modal-sub');
+
   document.getElementById('auth-login-erro').classList.add('hidden');
   document.getElementById('auth-cad-erro').classList.add('hidden');
+
+  if (currentUser) {
+    sessaoAtiva.classList.remove('hidden');
+    naoLogado.classList.add('hidden');
+    titulo.textContent = 'Minha Conta';
+    sub.textContent = 'Sessão conectada neste dispositivo';
+
+    document.getElementById('auth-usuario-nome').textContent = currentUser.nome;
+    document.getElementById('auth-usuario-email').textContent = currentUser.email;
+    document.getElementById('auth-usuario-bairro').textContent = currentUser.bairro || 'Atibaia - SP';
+  } else {
+    sessaoAtiva.classList.add('hidden');
+    naoLogado.classList.remove('hidden');
+    titulo.textContent = 'Entrar ou Criar Conta';
+    sub.textContent = 'Acesse para guardar suas notas fiscais';
+    alternarAbaAuth('login');
+  }
+
   document.getElementById('auth-modal').classList.remove('hidden');
+  lucide.createIcons();
 }
 
 function fecharModalAuth() {
@@ -146,7 +152,7 @@ async function executarLogin() {
     renderizarUserHeader();
     carregarComprasSalvas();
     carregarMetricas();
-    alert(`Bem-vindo de volta, ${currentUser.nome}!`);
+    alert(`Bem-vindo(a) de volta, ${currentUser.nome}!`);
   } catch (err) {
     erroDiv.textContent = err.message;
     erroDiv.classList.remove('hidden');
@@ -493,6 +499,12 @@ function renderResults(data) {
 async function salvarCompraAtual() {
   if (!lastExtractionResult) return;
 
+  if (!currentUser) {
+    alert("Por favor, entre ou crie sua conta para salvar esta compra no seu perfil!");
+    abrirModalAuth();
+    return;
+  }
+
   const btnSalvar = document.getElementById('btn-salvar-compra');
   btnSalvar.disabled = true;
   btnSalvar.innerHTML = `<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> Salvando...`;
@@ -529,6 +541,24 @@ async function salvarCompraAtual() {
 // Carrega a lista de compras salvas no SQLite (pessoal ou colaborativa)
 async function carregarComprasSalvas() {
   const container = document.getElementById('compras-lista-container');
+
+  if (filtroComprasAtual === 'minhas' && !currentUser) {
+    container.innerHTML = `
+      <div class="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-3">
+        <div class="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto">
+          <i data-lucide="lock" class="w-6 h-6"></i>
+        </div>
+        <h3 class="font-bold text-slate-800 text-base">Minhas Compras Privadas</h3>
+        <p class="text-xs text-slate-500 max-w-sm mx-auto">Crie sua conta ou faça login para guardar suas notas fiscais de forma privada e acompanhar seus gastos pessoais.</p>
+        <button onclick="abrirModalAuth()" class="mt-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition">
+          Criar Conta ou Entrar
+        </button>
+      </div>
+    `;
+    lucide.createIcons();
+    return;
+  }
+
   container.innerHTML = `
     <div class="text-center py-8 text-slate-400">
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto mb-2"></div>

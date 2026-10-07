@@ -18,7 +18,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Economia Atibaia" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=2.1" />
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans pb-20 md:pb-6">
 
@@ -503,8 +503,8 @@
             <i data-lucide="user" class="w-5 h-5"></i>
           </div>
           <div>
-            <h3 id="auth-modal-titulo" class="font-bold text-base text-slate-900">Entrar na Comunidade</h3>
-            <p class="text-[11px] text-slate-500">Compartilhe e compare preços em Atibaia</p>
+            <h3 id="auth-modal-titulo" class="font-bold text-base text-slate-900">Minha Conta</h3>
+            <p id="auth-modal-sub" class="text-[11px] text-slate-500">Acesse para salvar suas notas em Atibaia</p>
           </div>
         </div>
         <button onclick="fecharModalAuth()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
@@ -512,54 +512,76 @@
         </button>
       </div>
 
-      <!-- Abas Entrar / Cadastrar -->
-      <div class="flex border-b border-slate-200 bg-slate-100/70 p-1 text-xs font-semibold">
-        <button id="auth-tab-login" onclick="alternarAbaAuth('login')" class="flex-1 py-2 rounded-lg bg-white text-emerald-700 font-bold shadow-xs transition">
-          Já tenho conta (Entrar)
-        </button>
-        <button id="auth-tab-cadastro" onclick="alternarAbaAuth('cadastro')" class="flex-1 py-2 rounded-lg text-slate-600 hover:text-slate-900 transition">
-          Criar Nova Conta
-        </button>
+      <!-- Sessão Ativa (Exibida se já estiver logado) -->
+      <div id="auth-sessao-ativa" class="hidden p-6 space-y-4 text-center">
+        <div class="w-16 h-16 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto text-2xl font-black">
+          👤
+        </div>
+        <div>
+          <h4 id="auth-usuario-nome" class="font-bold text-lg text-slate-900">Nome do Usuário</h4>
+          <p id="auth-usuario-email" class="text-xs text-slate-500 mt-0.5">email@exemplo.com</p>
+          <span id="auth-usuario-bairro" class="inline-block mt-2 text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full font-semibold">Bairro</span>
+        </div>
+        <div class="pt-2 border-t border-slate-100 flex gap-2">
+          <button onclick="fecharModalAuth()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition">
+            Continuar Navegando
+          </button>
+          <button onclick="executarLogout()" class="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Sair
+          </button>
+        </div>
       </div>
 
-      <!-- Formulário de Login -->
-      <div id="auth-form-login" class="p-6 space-y-4">
-        <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
-          <input type="email" id="login-email" placeholder="seuemail@exemplo.com" value="admin@atibaia.com" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+      <!-- Abas Entrar / Cadastrar (Exibidas se NÃO estiver logado) -->
+      <div id="auth-nao-logado-container">
+        <div class="flex border-b border-slate-200 bg-slate-100/70 p-1 text-xs font-semibold">
+          <button id="auth-tab-login" onclick="alternarAbaAuth('login')" class="flex-1 py-2 rounded-lg bg-white text-emerald-700 font-bold shadow-xs transition">
+            Já tenho conta (Entrar)
+          </button>
+          <button id="auth-tab-cadastro" onclick="alternarAbaAuth('cadastro')" class="flex-1 py-2 rounded-lg text-slate-600 hover:text-slate-900 transition">
+            Criar Nova Conta
+          </button>
         </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Senha</label>
-          <input type="password" id="login-senha" placeholder="Sua senha" value="123456" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
-        </div>
-        <div id="auth-login-erro" class="hidden p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg"></div>
-        <button onclick="executarLogin()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-2">
-          <i data-lucide="log-in" class="w-4 h-4"></i> Entrar
-        </button>
-      </div>
 
-      <!-- Formulário de Cadastro -->
-      <div id="auth-form-cadastro" class="hidden p-6 space-y-3.5">
-        <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Seu Nome / Apelido</label>
-          <input type="text" id="cad-nome" placeholder="Ex: Lucas Silva, Mariana..." class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        <!-- Formulário de Login -->
+        <div id="auth-form-login" class="p-6 space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
+            <input type="email" id="login-email" placeholder="seuemail@exemplo.com" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Senha</label>
+            <input type="password" id="login-senha" placeholder="Sua senha" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div id="auth-login-erro" class="hidden p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg"></div>
+          <button onclick="executarLogin()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-2">
+            <i data-lucide="log-in" class="w-4 h-4"></i> Entrar
+          </button>
         </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
-          <input type="email" id="cad-email" placeholder="seuemail@exemplo.com" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+
+        <!-- Formulário de Cadastro -->
+        <div id="auth-form-cadastro" class="hidden p-6 space-y-3.5">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Seu Nome / Apelido</label>
+            <input type="text" id="cad-nome" placeholder="Ex: Lucas Silva, Mariana..." class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
+            <input type="email" id="cad-email" placeholder="seuemail@exemplo.com" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Bairro em Atibaia (Opcional)</label>
+            <input type="text" id="cad-bairro" placeholder="Ex: Alvinópolis, Lucas, Centro, Portão..." class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Criar Senha</label>
+            <input type="password" id="cad-senha" placeholder="Mínimo 4 caracteres" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div id="auth-cad-erro" class="hidden p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg"></div>
+          <button onclick="executarCadastro()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-2">
+            <i data-lucide="user-plus" class="w-4 h-4"></i> Criar Minha Conta
+          </button>
         </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Bairro em Atibaia (Opcional)</label>
-          <input type="text" id="cad-bairro" placeholder="Ex: Alvinópolis, Lucas, Centro, Portão..." class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Criar Senha</label>
-          <input type="password" id="cad-senha" placeholder="Mínimo 4 caracteres" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
-        </div>
-        <div id="auth-cad-erro" class="hidden p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg"></div>
-        <button onclick="executarCadastro()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-2">
-          <i data-lucide="user-plus" class="w-4 h-4"></i> Criar Minha Conta
-        </button>
       </div>
 
     </div>
@@ -570,6 +592,6 @@
     App de Economia em Supermercados &copy; 2026 — SQLite & SEFAZ NFC-e
   </footer>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2.1"></script>
 </body>
 </html>
