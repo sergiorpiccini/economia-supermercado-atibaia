@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Economia Supermercado</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- HTML5 QR Code Scanner Library -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <!-- Chart.js CDN para gráficos de linha do tempo e comparativo -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- PWA e Mobile Meta Tags -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#059669" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Economia Atibaia" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans pb-20 md:pb-6">
+
+  <!-- Header -->
+  <header class="bg-emerald-600 text-white shadow-md sticky top-0 z-40">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <i data-lucide="shopping-bag" class="w-7 h-7"></i>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight leading-none">Economia em Mercados</h1>
+          <p class="text-[11px] text-emerald-100 font-medium mt-0.5">Radar Colaborativo • Atibaia/SP</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <div id="user-header-container">
+          <!-- Renderizado via JS: Perfil do Usuário ou Botão Entrar -->
+        </div>
+        <button onclick="toggleMobileModal()" class="text-xs bg-emerald-700/80 hover:bg-emerald-800 text-emerald-100 font-semibold px-2.5 py-1.5 rounded-xl border border-emerald-500/60 flex items-center gap-1 transition" title="Acesso no Celular">
+          <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navegação Principal (Abas Superiores) -->
+  <nav class="bg-white border-b border-slate-200 sticky top-[57px] z-30 shadow-xs">
+    <div class="max-w-4xl mx-auto px-4 flex">
+      <button onclick="navigateView('scanner')" id="nav-scanner" class="nav-tab flex-1 py-3 text-center font-bold text-sm text-emerald-600 border-b-2 border-emerald-600 flex items-center justify-center gap-2">
+        <i data-lucide="scan-line" class="w-4 h-4"></i> Escanear Nota
+      </button>
+      <button onclick="navigateView('compras')" id="nav-compras" class="nav-tab flex-1 py-3 text-center font-medium text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-2">
+        <i data-lucide="receipt" class="w-4 h-4"></i> Minhas Compras
+      </button>
+      <button onclick="navigateView('historico')" id="nav-historico" class="nav-tab flex-1 py-3 text-center font-medium text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-2">
+        <i data-lucide="trending-down" class="w-4 h-4"></i> Preços & Economia
+      </button>
+    </div>
+  </nav>
+
+  <!-- Modal para Conectar Celular -->
+  <div id="mobile-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 text-center shadow-xl space-y-4">
+      <div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+        <i data-lucide="wifi" class="w-6 h-6"></i>
+      </div>
+      <div>
+        <h3 class="font-bold text-lg text-slate-900">Acesso no Celular</h3>
+        <p class="text-xs text-slate-500 mt-1">Conecte no mesmo Wi-Fi e escaneie o código abaixo com a câmera do seu smartphone:</p>
+      </div>
+      <div class="bg-slate-50 p-4 rounded-xl flex justify-center border border-slate-200">
+        <img id="mobile-qr-img" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=http://192.168.15.64:3000" alt="QR Code Rede Local" class="w-44 h-44 rounded-lg shadow-sm" />
+      </div>
+      <div class="space-y-1 text-center bg-slate-50 p-3 rounded-xl border border-slate-200">
+        <span class="text-[11px] text-slate-500 font-medium">Endereço no navegador:</span>
+        <input type="text" id="mobile-url-input" readonly value="http://192.168.15.64:3000" class="w-full text-center text-xs font-mono font-bold text-emerald-700 bg-white border border-slate-300 rounded-lg py-2 px-3 select-all" />
+      </div>
+      <button onclick="toggleMobileModal()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition">
+        Fechar
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <main class="max-w-4xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+
+    <!-- ==================== TELA 1: ESCANEAR NOTA ==================== -->
+    <div id="view-scanner" class="space-y-6">
+      
+      <!-- Card Principal de Captura -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <!-- Sub-abas de Entrada -->
+        <div class="flex border-b border-slate-200 bg-slate-100/70 p-1 text-sm font-medium">
+          <button id="tab-file" onclick="switchScannerTab('file')" class="tab-btn flex-1 py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 bg-white text-emerald-700 shadow-sm transition font-bold">
+            <i data-lucide="camera" class="w-4 h-4 text-emerald-600"></i> Tirar Foto (Câmera)
+          </button>
+          <button id="tab-manual" onclick="switchScannerTab('manual')" class="tab-btn flex-1 py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-slate-600 hover:text-slate-900 transition">
+            <i data-lucide="link" class="w-4 h-4"></i> Colar URL
+          </button>
+          <button id="tab-camera" onclick="switchScannerTab('camera')" class="tab-btn flex-1 py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-slate-600 hover:text-slate-900 transition">
+            <i data-lucide="video" class="w-4 h-4"></i> Vídeo Contínuo
+          </button>
+        </div>
+
+        <!-- Conteúdo da Sub-Aba 1: Foto / Câmera Nativa -->
+        <div id="content-file" class="p-6 space-y-4">
+          <div class="border-2 border-dashed border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50 rounded-2xl p-8 text-center transition cursor-pointer active:scale-98" onclick="document.getElementById('file-input').click()">
+            <input type="file" id="file-input" accept="image/*" capture="environment" class="hidden" onchange="handleFileUpload(event)" />
+            <div class="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center mx-auto shadow-md mb-3">
+              <i data-lucide="camera" class="w-8 h-8"></i>
+            </div>
+            <p class="font-bold text-base text-slate-900">Toque aqui para Tirar Foto do Cupom</p>
+            <p class="text-xs text-slate-500 mt-1">Abre a câmera do celular com foco automático</p>
+          </div>
+          <div id="file-reader-container" class="hidden max-w-sm mx-auto"></div>
+        </div>
+
+        <!-- Conteúdo da Sub-Aba 2: Colar URL -->
+        <div id="content-manual" class="hidden p-6 space-y-4">
+          <label class="block text-sm font-medium text-slate-700">
+            URL da NFC-e (SEFAZ)
+          </label>
+          <div class="flex gap-2">
+            <input type="url" id="manual-url-input" placeholder="https://www.sefaz... ou link completo" class="flex-1 px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm" />
+            <button onclick="processManualUrl()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl shadow-sm flex items-center gap-2 transition active:scale-95">
+              <i data-lucide="arrow-right" class="w-4 h-4"></i> Extrair
+            </button>
+          </div>
+          <p class="text-xs text-slate-500">
+            Dica: Cole o link do QR Code da SEFAZ para extrair os itens.
+          </p>
+        </div>
+
+        <!-- Conteúdo da Sub-Aba 3: Scanner de Vídeo -->
+        <div id="content-camera" class="hidden p-6 space-y-4">
+          <div class="text-center">
+            <p class="text-sm text-slate-600">Aponte a câmera para o QR Code impresso no cupom fiscal.</p>
+          </div>
+          
+          <div class="relative max-w-sm mx-auto overflow-hidden rounded-xl bg-slate-950 border-2 border-emerald-500/50 shadow-inner aspect-square flex items-center justify-center">
+            <div id="qr-reader" class="w-full h-full"></div>
+            <div id="camera-placeholder" class="text-center p-4 text-slate-400">
+              <i data-lucide="scan-line" class="w-12 h-12 mx-auto mb-2 text-emerald-400 animate-pulse"></i>
+              <p class="text-sm">Clique no botão abaixo para iniciar a câmera</p>
+            </div>
+          </div>
+
+          <div class="flex justify-center gap-3">
+            <button id="btn-start-camera" onclick="startScanner()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl shadow-sm flex items-center gap-2 transition active:scale-95">
+              <i data-lucide="play" class="w-4 h-4"></i> Iniciar Vídeo
+            </button>
+            <button id="btn-stop-camera" onclick="stopScanner()" class="hidden px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl shadow-sm flex items-center gap-2 transition active:scale-95">
+              <i data-lucide="square" class="w-4 h-4"></i> Parar Vídeo
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status & Loader -->
+      <div id="status-card" class="hidden bg-white p-6 rounded-2xl shadow-sm border border-slate-200 text-center space-y-3">
+        <div class="flex justify-center">
+          <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600"></div>
+        </div>
+        <p id="status-message" class="text-sm font-medium text-slate-700">Consultando SEFAZ e extraindo dados da nota...</p>
+      </div>
+
+      <!-- Mensagem de Erro -->
+      <div id="error-card" class="hidden bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-start gap-3">
+        <i data-lucide="alert-circle" class="w-5 h-5 text-rose-600 mt-0.5 flex-shrink-0"></i>
+        <div class="flex-1 text-sm">
+          <p class="font-bold" id="error-title">Erro na extração</p>
+          <p id="error-desc" class="text-rose-700 text-xs mt-0.5"></p>
+        </div>
+      </div>
+
+      <!-- Resultados da Extração -->
+      <div id="results-card" class="hidden space-y-6">
+        
+        <!-- Resumo do Estabelecimento, Total e Ações -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                <i data-lucide="store" class="w-3 h-3"></i> Supermercado
+              </span>
+              <span class="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                <i data-lucide="shield-check" class="w-3 h-3 text-emerald-600"></i> Oficial NFC-e (Imutável)
+              </span>
+            </div>
+            <h2 id="res-mercado" class="text-xl font-black text-slate-900 mt-1">Supermercado Exemplo</h2>
+            <div id="res-mercado-sub" class="space-y-0.5"></div>
+            <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 pt-1">
+              <span id="res-cnpj">CNPJ: --</span>
+              <span id="res-data">Data: --</span>
+            </div>
+          </div>
+          <div class="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+            <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 sm:p-4 text-right min-w-[160px] w-full sm:w-auto">
+              <span class="text-xs text-emerald-800 font-medium">Valor Total da Nota</span>
+              <div id="res-total" class="text-2xl font-black text-emerald-700">R$ 0,00</div>
+              <span id="res-qtd-itens" class="text-xs text-slate-500">0 itens encontrados</span>
+            </div>
+            <button id="btn-salvar-compra" onclick="salvarCompraAtual()" class="w-full sm:w-auto px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2 transition active:scale-95">
+              <i data-lucide="check-circle" class="w-5 h-5"></i> Salvar Compra
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabela / Lista de Itens -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <i data-lucide="list" class="w-5 h-5 text-emerald-600"></i>
+              <h3 class="font-bold text-slate-800">Itens Extraídos</h3>
+            </div>
+            <button onclick="copiarJson()" class="text-xs font-medium text-slate-600 hover:text-emerald-600 flex items-center gap-1 border border-slate-200 rounded-lg px-2.5 py-1.5 hover:bg-slate-50 transition">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i> Copiar JSON
+            </button>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead class="bg-slate-50 text-slate-500 text-xs font-semibold uppercase border-b border-slate-200">
+                <tr>
+                  <th class="px-4 py-3">#</th>
+                  <th class="px-4 py-3">Item / Descrição</th>
+                  <th class="px-4 py-3 text-center">Qtd</th>
+                  <th class="px-4 py-3 text-right">Vl. Unitário</th>
+                  <th class="px-4 py-3 text-right">Vl. Total</th>
+                </tr>
+              </thead>
+              <tbody id="res-itens-table" class="divide-y divide-slate-100">
+                <!-- Linhas inseridas via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Inspecionar Resposta Técnica / Debug -->
+        <div class="bg-slate-900 text-slate-200 rounded-2xl p-4 shadow-sm border border-slate-800">
+          <button onclick="toggleDebug()" class="w-full flex items-center justify-between text-xs font-mono text-slate-400 hover:text-slate-100">
+            <span>🔍 Ver Dados Brutos (JSON de Extração)</span>
+            <i id="debug-chevron" data-lucide="chevron-down" class="w-4 h-4"></i>
+          </button>
+          <pre id="debug-json" class="hidden mt-3 p-3 bg-slate-950 rounded-lg text-xs font-mono overflow-x-auto text-emerald-400 max-h-60"></pre>
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- ==================== TELA 2: MINHAS COMPRAS SALVAS ==================== -->
+    <div id="view-compras" class="hidden space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+        <div>
+          <h2 class="text-xl font-bold text-slate-900">Histórico de Compras</h2>
+          <p id="compras-sub-filtro" class="text-xs text-slate-500 mt-0.5">Notas fiscais armazenadas no seu banco de dados local</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600">
+            <button id="btn-filtro-minhas" onclick="alternarFiltroCompras('minhas')" class="px-3 py-1.5 rounded-lg bg-white text-emerald-700 shadow-xs font-bold transition">
+              Minhas Notas
+            </button>
+            <button id="btn-filtro-todas" onclick="alternarFiltroCompras('todas')" class="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition">
+              Toda Atibaia (Colaborativo)
+            </button>
+          </div>
+          <button onclick="carregarComprasSalvas()" class="p-2 text-slate-600 hover:text-emerald-600 bg-slate-50 border border-slate-200 rounded-xl shadow-xs transition" title="Atualizar">
+            <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <div id="compras-lista-container" class="space-y-4">
+        <!-- Renderizado dinamicamente via JS -->
+      </div>
+    </div>
+
+
+    <!-- ==================== TELA 3: PREÇOS & ECONOMIA ==================== -->
+    <div id="view-historico" class="hidden space-y-6">
+      
+      <!-- Cards de Métricas Gerais -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+          <span class="text-xs text-slate-500 font-medium">Economia Total</span>
+          <div id="stat-economia" class="text-xl font-black text-emerald-600 mt-1">R$ 0,00</div>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+          <span class="text-xs text-slate-500 font-medium">Total de Compras</span>
+          <div id="stat-compras" class="text-xl font-black text-slate-900 mt-1">0</div>
+        </div>
+        <div onclick="abrirModalCatalogoProdutos()" class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-400 hover:shadow-md transition cursor-pointer active:scale-98 group">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-500 font-medium">Produtos Cadastrados</span>
+            <i data-lucide="external-link" class="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 transition"></i>
+          </div>
+          <div id="stat-produtos" class="text-xl font-black text-slate-900 mt-1">0</div>
+          <p class="text-[10px] text-emerald-600 font-semibold mt-0.5 flex items-center gap-1">Ver todos produtos &rarr;</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+          <span class="text-xs text-slate-500 font-medium">Mercados Registrados</span>
+          <div id="stat-mercados" class="text-xl font-black text-slate-900 mt-1">0</div>
+        </div>
+      </div>
+
+      <!-- Seção: Grupos de Comparação Personalizados (Cestas de Marcas) -->
+      <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h3 class="font-bold text-slate-900 text-base flex items-center gap-2">
+              <i data-lucide="layers" class="w-5 h-5 text-emerald-600"></i> Cestas de Comparação Personalizadas
+            </h3>
+            <p class="text-xs text-slate-500 mt-0.5">Agrupe marcas concorrentes (ex: Sabonetes, Mussarela, Leite) para comparar e descobrir o menor preço entre elas.</p>
+          </div>
+          <button onclick="abrirModalCriarGrupo()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition active:scale-95 whitespace-nowrap">
+            <i data-lucide="plus" class="w-4 h-4"></i> Criar Nova Cesta
+          </button>
+        </div>
+
+        <div id="grupos-comparacao-container" class="space-y-4">
+          <!-- Renderizado via JS -->
+        </div>
+      </div>
+
+      <!-- Comparador & Busca de Produto -->
+      <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <h3 class="font-bold text-slate-800 flex items-center gap-2">
+          <i data-lucide="search" class="w-5 h-5 text-emerald-600"></i> Consultar Histórico de Produto Individual
+        </h3>
+        <div class="flex gap-2">
+          <input type="text" id="busca-produto-input" placeholder="Digite o nome de um produto (ex: Leite, Café, Arroz)..." class="flex-1 px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm" />
+          <button onclick="buscarHistoricoProduto()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl shadow-sm flex items-center gap-2 transition active:scale-95">
+            <i data-lucide="search" class="w-4 h-4"></i> Buscar
+          </button>
+        </div>
+
+        <!-- Resultado da Busca do Produto -->
+        <div id="busca-produto-resultado" class="hidden mt-4 pt-4 border-t border-slate-100 space-y-4">
+          <!-- Detalhes preenchidos via JS -->
+        </div>
+      </div>
+
+      <!-- Top Produtos Mais Comprados -->
+      <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <h3 class="font-bold text-slate-800 flex items-center gap-2">
+          <i data-lucide="trending-up" class="w-5 h-5 text-emerald-600"></i> Produtos Mais Frequentes
+        </h3>
+        <div id="top-produtos-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          <!-- Renderizado via JS -->
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Modal Catálogo Completo de Produtos -->
+  <div id="catalogo-produtos-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 class="font-bold text-lg text-slate-900 flex items-center gap-2">
+            <i data-lucide="package-search" class="w-5 h-5 text-emerald-600"></i> Catálogo Completo de Produtos
+          </h3>
+          <p id="catalogo-total-sub" class="text-xs text-slate-500 mt-0.5">Todos os itens extraídos de notas fiscais</p>
+        </div>
+        <button onclick="fecharModalCatalogo()" class="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Barra de Filtro do Catálogo -->
+      <div class="p-4 border-b border-slate-100 bg-white">
+        <div class="relative">
+          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
+          <input type="text" id="catalogo-filtro-input" oninput="filtrarCatalogoProdutos(this.value)" placeholder="Filtrar por nome do produto ou código..." class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition" />
+        </div>
+      </div>
+
+      <!-- Lista do Catálogo -->
+      <div class="p-4 overflow-y-auto flex-1 space-y-3" id="catalogo-itens-container">
+        <!-- Renderizado dinamicamente -->
+      </div>
+
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center text-xs text-slate-500">
+        <span id="catalogo-stats-rodape">Carregando produtos...</span>
+        <button onclick="fecharModalCatalogo()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl transition">
+          Fechar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Criar Cesta / Grupo de Comparação -->
+  <div id="criar-grupo-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-emerald-600"></i> Nova Cesta de Comparação
+        </h3>
+        <button onclick="fecharModalCriarGrupo()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nome da Cesta / Categoria</label>
+          <input type="text" id="novo-grupo-nome" placeholder="Ex: Sabonetes do Dia a Dia, Queijo Mussarela..." class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Descrição / Observação (Opcional)</label>
+          <input type="text" id="novo-grupo-desc" placeholder="Ex: Comparar marcas Albany vs Dove vs Palmolive" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <p class="text-[11px] text-slate-500 bg-emerald-50 p-2.5 rounded-lg border border-emerald-100">
+          💡 <strong>Dica:</strong> Depois de criar a cesta, você poderá adicionar os produtos que deseja comparar entre si sem alterar os dados oficiais de cada nota fiscal.
+        </p>
+      </div>
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+        <button onclick="fecharModalCriarGrupo()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
+          Cancelar
+        </button>
+        <button onclick="salvarNovoGrupo()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm">
+          Criar Cesta
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Adicionar Produto a uma Cesta -->
+  <div id="add-produto-grupo-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 class="font-bold text-base text-slate-900">Adicionar à Cesta de Comparação</h3>
+          <p id="add-modal-produto-nome" class="text-xs text-slate-500 mt-0.5 truncate font-medium">Produto selecionado</p>
+        </div>
+        <button onclick="fecharModalAddProdutoGrupo()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-3">
+        <label class="block text-xs font-bold text-slate-700 uppercase">Escolha a Cesta de Destino:</label>
+        <div id="add-modal-grupos-lista" class="space-y-2 max-h-60 overflow-y-auto">
+          <!-- Renderizado via JS -->
+        </div>
+      </div>
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center">
+        <button onclick="fecharModalAddProdutoGrupo(); abrirModalCriarGrupo();" class="text-xs text-emerald-700 font-bold hover:underline flex items-center gap-1">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nova Cesta
+        </button>
+        <button onclick="fecharModalAddProdutoGrupo()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
+          Fechar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Detalhes da Compra -->
+  <div id="detalhes-compra-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 id="modal-compra-titulo" class="font-bold text-lg text-slate-900">Detalhes da Compra</h3>
+          <p id="modal-compra-sub" class="text-xs text-slate-500 mt-0.5">--</p>
+        </div>
+        <button onclick="fecharModalDetalhes()" class="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1 space-y-4">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-50 text-slate-500 text-xs font-semibold uppercase border-b border-slate-200">
+              <tr>
+                <th class="px-4 py-2">Item</th>
+                <th class="px-4 py-2 text-center">Qtd</th>
+                <th class="px-4 py-2 text-right">Vl. Unit</th>
+                <th class="px-4 py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody id="modal-itens-table" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center">
+        <span id="modal-compra-total" class="font-bold text-slate-900 text-base">Total: R$ 0,00</span>
+        <button onclick="fecharModalDetalhes()" class="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl text-sm transition">
+          Fechar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Autenticação / Login / Cadastro -->
+  <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+      <!-- Header do Modal de Auth -->
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div class="flex items-center gap-2">
+          <div class="w-9 h-9 bg-emerald-100 text-emerald-700 rounded-xl flex items-center justify-center font-black">
+            <i data-lucide="user" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 id="auth-modal-titulo" class="font-bold text-base text-slate-900">Minha Conta</h3>
+            <p id="auth-modal-sub" class="text-[11px] text-slate-500">Acesse para salvar suas notas em Atibaia</p>
+          </div>
+        </div>
+        <button onclick="fecharModalAuth()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Sessão Ativa (Exibida se já estiver logado) -->
+      <div id="auth-sessao-ativa" class="hidden p-6 space-y-4 text-center">
+        <div class="w-16 h-16 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto text-2xl font-black">
+          👤
+        </div>
+        <div>
+          <h4 id="auth-usuario-nome" class="font-bold text-lg text-slate-900">Nome do Usuário</h4>
+          <p id="auth-usuario-email" class="text-xs text-slate-500 mt-0.5">email@exemplo.com</p>
+          <span id="auth-usuario-bairro" class="inline-block mt-2 text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full font-semibold">Bairro</span>
+        </div>
+        <div class="pt-2 border-t border-slate-100 flex gap-2">
+          <button onclick="fecharModalAuth()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition">
+            Continuar Navegando
+          </button>
+          <button onclick="executarLogout()" class="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Sair
+          </button>
+        </div>
+      </div>
+
+      <!-- Abas Entrar / Cadastrar (Exibidas se NÃO estiver logado) -->
+      <div id="auth-nao-logado-container">
+        <div class="flex border-b border-slate-200 bg-slate-100/70 p-1 text-xs font-semibold">
+          <button id="auth-tab-login" onclick="alternarAbaAuth('login')" class="flex-1 py-2 rounded-lg bg-white text-emerald-700 font-bold shadow-xs transition">
+            Já tenho conta (Entrar)
+          </button>
+          <button id="auth-tab-cadastro" onclick="alternarAbaAuth('cadastro')" class="flex-1 py-2 rounded-lg text-slate-600 hover:text-slate-900 transition">
+            Criar Nova Conta
+          </button>
+        </div>
+
+        <!-- Formulário de Login -->
+        <div id="auth-form-login" class="p-6 space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
+            <input type="email" id="login-email" placeholder="seuemail@exemplo.com" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Senha</label>
+            <input type="password" id="login-senha" placeholder="Sua senha" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div id="auth-login-erro" class="hidden p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg"></div>
+          <button onclick="executarLogin()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-2">
+            <i data-lucide="log-in" class="w-4 h-4"></i> Entrar
+          </button>
+        </div>
+
+        <!-- Formulário de Cadastro -->
+        <div id="auth-form-cadastro" class="hidden p-6 space-y-3.5">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Seu Nome / Apelido</label>
+            <input type="text" id="cad-nome" placeholder="Ex: Lucas Silva, Mariana..." class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
+            <input type="email" id="cad-email" placeholder="seuemail@exemplo.com" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Bairro em Atibaia (Opcional)</label>
+            <input type="text" id="cad-bairro" placeholder="Ex: Alvinópolis, Lucas, Centro, Portão..." class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Criar Senha</label>
+            <input type="password" id="cad-senha" placeholder="Mínimo 4 caracteres" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div id="auth-cad-erro" class="hidden p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg"></div>
+          <button onclick="executarCadastro()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-2">
+            <i data-lucide="user-plus" class="w-4 h-4"></i> Criar Minha Conta
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
+    App de Economia em Supermercados &copy; 2026 — SQLite & SEFAZ NFC-e
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
