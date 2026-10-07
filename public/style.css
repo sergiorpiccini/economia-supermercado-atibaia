@@ -1,0 +1,22 @@
+/* Custom overrides for QR Scanner UI */
+#qr-reader {
+  border: none !important;
+}
+
+#qr-reader__scan_region {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+#qr-reader__dashboard {
+  padding: 8px 0;
+}
+
+#qr-reader img {
+  display: inline-block;
+}
+
+.tab-btn.active {
+  background-color: #ffffff;
+  color: #047857;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
