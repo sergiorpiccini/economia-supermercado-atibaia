@@ -18,7 +18,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Economia Atibaia" />
-  <link rel="stylesheet" href="style.css?v=2.1" />
+  <link rel="stylesheet" href="style.css?v=2.2" />
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans pb-20 md:pb-6">
 
@@ -43,49 +43,107 @@
     </div>
   </header>
 
-  <!-- Navegação Principal (Abas Superiores) -->
-  <nav class="bg-white border-b border-slate-200 sticky top-[57px] z-30 shadow-xs">
-    <div class="max-w-4xl mx-auto px-4 flex">
-      <button onclick="navigateView('scanner')" id="nav-scanner" class="nav-tab flex-1 py-3 text-center font-bold text-sm text-emerald-600 border-b-2 border-emerald-600 flex items-center justify-center gap-2">
-        <i data-lucide="scan-line" class="w-4 h-4"></i> Escanear Nota
-      </button>
-      <button onclick="navigateView('compras')" id="nav-compras" class="nav-tab flex-1 py-3 text-center font-medium text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-2">
-        <i data-lucide="receipt" class="w-4 h-4"></i> Minhas Compras
-      </button>
-      <button onclick="navigateView('historico')" id="nav-historico" class="nav-tab flex-1 py-3 text-center font-medium text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-2">
-        <i data-lucide="trending-down" class="w-4 h-4"></i> Preços & Economia
-      </button>
+  <!-- Portal de Acesso / Gatekeeper de Autenticação (Exibido para quem não está logado) -->
+  <div id="view-auth-gatekeeper" class="max-w-md mx-auto px-4 py-8 w-full space-y-6">
+    <div class="text-center space-y-2">
+      <div class="w-16 h-16 bg-emerald-600 text-white rounded-3xl flex items-center justify-center mx-auto shadow-lg shadow-emerald-600/30 mb-3">
+        <i data-lucide="shopping-bag" class="w-8 h-8"></i>
+      </div>
+      <h2 class="text-2xl font-black text-slate-900 tracking-tight">Economia em Mercados</h2>
+      <p class="text-xs text-slate-500 max-w-xs mx-auto">Rede colaborativa de preços reais e histórico de supermercados de Atibaia/SP</p>
     </div>
-  </nav>
 
-  <!-- Modal para Conectar Celular -->
-  <div id="mobile-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl max-w-sm w-full p-6 text-center shadow-xl space-y-4">
-      <div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-        <i data-lucide="wifi" class="w-6 h-6"></i>
+    <!-- Benefícios rápidos -->
+    <div class="bg-emerald-50/80 border border-emerald-200/80 rounded-2xl p-4 space-y-2 text-xs text-emerald-900">
+      <div class="flex items-center gap-2 font-medium">
+        <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+        <span>Compare preços reais de mercado em Atibaia</span>
       </div>
-      <div>
-        <h3 class="font-bold text-lg text-slate-900">Acesso no Celular</h3>
-        <p class="text-xs text-slate-500 mt-1">Conecte no mesmo Wi-Fi e escaneie o código abaixo com a câmera do seu smartphone:</p>
+      <div class="flex items-center gap-2 font-medium">
+        <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+        <span>Histórico de compras e gastos organizado</span>
       </div>
-      <div class="bg-slate-50 p-4 rounded-xl flex justify-center border border-slate-200">
-        <img id="mobile-qr-img" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=http://192.168.15.64:3000" alt="QR Code Rede Local" class="w-44 h-44 rounded-lg shadow-sm" />
+      <div class="flex items-center gap-2 font-medium">
+        <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+        <span>Gráficos de evolução de preços entre mercados</span>
       </div>
-      <div class="space-y-1 text-center bg-slate-50 p-3 rounded-xl border border-slate-200">
-        <span class="text-[11px] text-slate-500 font-medium">Endereço no navegador:</span>
-        <input type="text" id="mobile-url-input" readonly value="http://192.168.15.64:3000" class="w-full text-center text-xs font-mono font-bold text-emerald-700 bg-white border border-slate-300 rounded-lg py-2 px-3 select-all" />
+    </div>
+
+    <!-- Card de Login / Cadastro -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="flex border-b border-slate-200 bg-slate-100/70 p-1 text-xs font-bold">
+        <button id="gatekeeper-tab-login" onclick="alternarGatekeeperTab('login')" class="flex-1 py-2.5 rounded-xl bg-white text-emerald-700 shadow-xs transition">
+          Já tenho conta (Entrar)
+        </button>
+        <button id="gatekeeper-tab-cadastro" onclick="alternarGatekeeperTab('cadastro')" class="flex-1 py-2.5 rounded-xl text-slate-600 hover:text-slate-900 transition">
+          Criar Nova Conta
+        </button>
       </div>
-      <button onclick="toggleMobileModal()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition">
-        Fechar
-      </button>
+
+      <!-- Form Login -->
+      <div id="gatekeeper-form-login" class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
+          <input type="email" id="gate-login-email" placeholder="seuemail@exemplo.com" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Senha</label>
+          <input type="password" id="gate-login-senha" placeholder="Sua senha" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" onkeydown="if(event.key==='Enter') executarLoginGatekeeper()" />
+        </div>
+        <div id="gate-login-erro" class="hidden p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium"></div>
+        <button onclick="executarLoginGatekeeper()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md shadow-emerald-600/20 transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer">
+          <i data-lucide="log-in" class="w-4 h-4"></i> Entrar no App
+        </button>
+      </div>
+
+      <!-- Form Cadastro -->
+      <div id="gatekeeper-form-cadastro" class="hidden p-6 space-y-3.5">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Seu Nome / Apelido</label>
+          <input type="text" id="gate-cad-nome" placeholder="Ex: Mariana, Lucas..." class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
+          <input type="email" id="gate-cad-email" placeholder="seuemail@exemplo.com" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Bairro em Atibaia</label>
+          <input type="text" id="gate-cad-bairro" placeholder="Ex: Alvinópolis, Lucas, Centro, Portão..." class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Criar Senha</label>
+          <input type="password" id="gate-cad-senha" placeholder="Mínimo 4 caracteres" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" onkeydown="if(event.key==='Enter') executarCadastroGatekeeper()" />
+        </div>
+        <div id="gate-cad-erro" class="hidden p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium"></div>
+        <button onclick="executarCadastroGatekeeper()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md shadow-emerald-600/20 transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer">
+          <i data-lucide="user-plus" class="w-4 h-4"></i> Criar Conta & Começar
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- Main Container -->
-  <main class="max-w-4xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+  <!-- Conteúdo Autenticado do App (Oculto se deslogado) -->
+  <div id="main-app-content" class="hidden flex-1 flex flex-col">
+    <!-- Navegação Principal (Abas Superiores) -->
+    <nav class="bg-white border-b border-slate-200 sticky top-[57px] z-30 shadow-xs">
+      <div class="max-w-4xl mx-auto px-4 flex">
+        <button onclick="navigateView('scanner')" id="nav-scanner" class="nav-tab flex-1 py-3 text-center font-bold text-sm text-emerald-600 border-b-2 border-emerald-600 flex items-center justify-center gap-2">
+          <i data-lucide="scan-line" class="w-4 h-4"></i> Escanear Nota
+        </button>
+        <button onclick="navigateView('compras')" id="nav-compras" class="nav-tab flex-1 py-3 text-center font-medium text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-2">
+          <i data-lucide="receipt" class="w-4 h-4"></i> Minhas Compras
+        </button>
+        <button onclick="navigateView('historico')" id="nav-historico" class="nav-tab flex-1 py-3 text-center font-medium text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-2">
+          <i data-lucide="trending-down" class="w-4 h-4"></i> Preços & Economia
+        </button>
+      </div>
+    </nav>
 
-    <!-- ==================== TELA 1: ESCANEAR NOTA ==================== -->
-    <div id="view-scanner" class="space-y-6">
+    <!-- Main Container -->
+    <main class="max-w-4xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+
+      <!-- ==================== TELA 1: ESCANEAR NOTA ==================== -->
+      <div id="view-scanner" class="space-y-6">
       
       <!-- Card Principal de Captura -->
       <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -355,6 +413,7 @@
     </div>
 
   </main>
+  </div> <!-- Fim de #main-app-content -->
 
   <!-- Modal Catálogo Completo de Produtos -->
   <div id="catalogo-produtos-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
@@ -592,6 +651,6 @@
     App de Economia em Supermercados &copy; 2026 — SQLite & SEFAZ NFC-e
   </footer>
 
-  <script src="app.js?v=2.1"></script>
+  <script src="app.js?v=2.2"></script>
 </body>
 </html>

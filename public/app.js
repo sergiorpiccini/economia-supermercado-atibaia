@@ -22,11 +22,8 @@ function getAuthHeaders() {
   return headers;
 }
 
-// Inicializa usuário logado
+// Inicializa usuário logado e controla visibilidade do Gatekeeper
 async function inicializarUsuario() {
-  const headerContainer = document.getElementById('user-header-container');
-  if (!headerContainer) return;
-
   if (authToken) {
     try {
       const response = await fetch('/api/auth/me', { headers: getAuthHeaders() });
@@ -42,7 +39,25 @@ async function inicializarUsuario() {
     }
   }
 
-  renderizarUserHeader();
+  aplicarEstadoAutenticacao();
+}
+
+function aplicarEstadoAutenticacao() {
+  const gatekeeper = document.getElementById('view-auth-gatekeeper');
+  const mainApp = document.getElementById('main-app-content');
+
+  if (currentUser) {
+    if (gatekeeper) gatekeeper.classList.add('hidden');
+    if (mainApp) mainApp.classList.remove('hidden');
+    renderizarUserHeader();
+    carregarComprasSalvas();
+    carregarMetricas();
+  } else {
+    if (gatekeeper) gatekeeper.classList.remove('hidden');
+    if (mainApp) mainApp.classList.add('hidden');
+    renderizarUserHeader();
+  }
+  lucide.createIcons();
 }
 
 function renderizarUserHeader() {
@@ -53,30 +68,133 @@ function renderizarUserHeader() {
     const primeiroNome = currentUser.nome ? currentUser.nome.split(' ')[0] : 'Usuário';
     const bairroTexto = currentUser.bairro ? ` • ${currentUser.bairro}` : '';
     headerContainer.innerHTML = `
-      <button onclick="abrirModalAuth()" class="flex items-center gap-1.5 bg-emerald-700/90 hover:bg-emerald-800 text-white px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition border border-emerald-500/80 shadow-xs" title="Perfil / Minha Conta">
-        <i data-lucide="user-check" class="w-3.5 h-3.5 text-emerald-200"></i>
-        <span class="max-w-[130px] truncate">${escapeHtml(primeiroNome)}${escapeHtml(bairroTexto)}</span>
-      </button>
+      <div class="flex items-center gap-1">
+        <button onclick="abrirModalAuth()" class="flex items-center gap-1.5 bg-emerald-700/90 hover:bg-emerald-800 text-white px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition border border-emerald-500/80 shadow-xs" title="Minha Conta">
+          <i data-lucide="user-check" class="w-3.5 h-3.5 text-emerald-200"></i>
+          <span class="max-w-[110px] truncate">${escapeHtml(primeiroNome)}${escapeHtml(bairroTexto)}</span>
+        </button>
+        <button onclick="executarLogout()" class="p-1.5 bg-emerald-700/80 hover:bg-rose-700 text-white rounded-xl text-xs transition border border-emerald-500/60 shadow-xs cursor-pointer" title="Sair da Conta">
+          <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
     `;
   } else {
     headerContainer.innerHTML = `
-      <button onclick="abrirModalAuth()" class="flex items-center gap-1.5 bg-white hover:bg-slate-100 text-emerald-800 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs">
-        <i data-lucide="log-in" class="w-3.5 h-3.5"></i> Entrar / Criar Conta
+      <button onclick="focarLoginGatekeeper()" class="flex items-center gap-1.5 bg-white hover:bg-slate-100 text-emerald-800 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer">
+        <i data-lucide="log-in" class="w-3.5 h-3.5"></i> Entrar
       </button>
     `;
   }
   lucide.createIcons();
 }
 
-// Modal de Autenticação
+// Alternar abas no Gatekeeper da tela inicial
+function alternarGatekeeperTab(aba) {
+  const tabLogin = document.getElementById('gatekeeper-tab-login');
+  const tabCad = document.getElementById('gatekeeper-tab-cadastro');
+  const formLogin = document.getElementById('gatekeeper-form-login');
+  const formCad = document.getElementById('gatekeeper-form-cadastro');
+
+  if (aba === 'login') {
+    tabLogin.className = "flex-1 py-2.5 rounded-xl bg-white text-emerald-700 shadow-xs font-bold transition";
+    tabCad.className = "flex-1 py-2.5 rounded-xl text-slate-600 hover:text-slate-900 transition";
+    formLogin.classList.remove('hidden');
+    formCad.classList.add('hidden');
+  } else {
+    tabCad.className = "flex-1 py-2.5 rounded-xl bg-white text-emerald-700 shadow-xs font-bold transition";
+    tabLogin.className = "flex-1 py-2.5 rounded-xl text-slate-600 hover:text-slate-900 transition";
+    formCad.classList.remove('hidden');
+    formLogin.classList.add('hidden');
+  }
+}
+
+function focarLoginGatekeeper() {
+  const gatekeeper = document.getElementById('view-auth-gatekeeper');
+  if (gatekeeper) {
+    gatekeeper.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('gate-login-email')?.focus();
+  }
+}
+
+// Login pelo Gatekeeper da Tela Inicial
+async function executarLoginGatekeeper() {
+  const email = document.getElementById('gate-login-email').value.trim();
+  const senha = document.getElementById('gate-login-senha').value.trim();
+  const erroDiv = document.getElementById('gate-login-erro');
+  erroDiv.classList.add('hidden');
+
+  if (!email || !senha) {
+    erroDiv.textContent = "Por favor, informe seu e-mail e sua senha.";
+    erroDiv.classList.remove('hidden');
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, senha })
+    });
+    const data = await response.json();
+    if (!data.sucesso) throw new Error(data.erro);
+
+    currentUser = data.usuario;
+    authToken = data.token;
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    localStorage.setItem('authToken', authToken);
+
+    aplicarEstadoAutenticacao();
+  } catch (err) {
+    erroDiv.textContent = err.message || "Erro ao efetuar login.";
+    erroDiv.classList.remove('hidden');
+  }
+}
+
+// Cadastro pelo Gatekeeper da Tela Inicial
+async function executarCadastroGatekeeper() {
+  const nome = document.getElementById('gate-cad-nome').value.trim();
+  const email = document.getElementById('gate-cad-email').value.trim();
+  const bairro = document.getElementById('gate-cad-bairro').value.trim();
+  const senha = document.getElementById('gate-cad-senha').value.trim();
+  const erroDiv = document.getElementById('gate-cad-erro');
+  erroDiv.classList.add('hidden');
+
+  if (!nome || !email || !senha) {
+    erroDiv.textContent = "Nome, e-mail e senha são obrigatórios.";
+    erroDiv.classList.remove('hidden');
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/auth/cadastro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nome, email, bairro, senha })
+    });
+    const data = await response.json();
+    if (!data.sucesso) throw new Error(data.erro);
+
+    currentUser = data.usuario;
+    authToken = data.token;
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    localStorage.setItem('authToken', authToken);
+
+    aplicarEstadoAutenticacao();
+  } catch (err) {
+    erroDiv.textContent = err.message || "Erro ao criar conta.";
+    erroDiv.classList.remove('hidden');
+  }
+}
+
+// Modal de Autenticação (quando logado para ver perfil ou trocar senha)
 function abrirModalAuth() {
   const sessaoAtiva = document.getElementById('auth-sessao-ativa');
   const naoLogado = document.getElementById('auth-nao-logado-container');
   const titulo = document.getElementById('auth-modal-titulo');
   const sub = document.getElementById('auth-modal-sub');
 
-  document.getElementById('auth-login-erro').classList.add('hidden');
-  document.getElementById('auth-cad-erro').classList.add('hidden');
+  document.getElementById('auth-login-erro')?.classList.add('hidden');
+  document.getElementById('auth-cad-erro')?.classList.add('hidden');
 
   if (currentUser) {
     sessaoAtiva.classList.remove('hidden');
@@ -149,10 +267,7 @@ async function executarLogin() {
     localStorage.setItem('authToken', authToken);
 
     fecharModalAuth();
-    renderizarUserHeader();
-    carregarComprasSalvas();
-    carregarMetricas();
-    alert(`Bem-vindo(a) de volta, ${currentUser.nome}!`);
+    aplicarEstadoAutenticacao();
   } catch (err) {
     erroDiv.textContent = err.message;
     erroDiv.classList.remove('hidden');
@@ -188,10 +303,7 @@ async function executarCadastro() {
     localStorage.setItem('authToken', authToken);
 
     fecharModalAuth();
-    renderizarUserHeader();
-    carregarComprasSalvas();
-    carregarMetricas();
-    alert(`Conta criada com sucesso! Bem-vindo(a), ${currentUser.nome}!`);
+    aplicarEstadoAutenticacao();
   } catch (err) {
     erroDiv.textContent = err.message;
     erroDiv.classList.remove('hidden');
@@ -204,10 +316,8 @@ function executarLogout(notificar = true) {
   localStorage.removeItem('currentUser');
   localStorage.removeItem('authToken');
   fecharModalAuth();
-  renderizarUserHeader();
+  aplicarEstadoAutenticacao();
   if (notificar) alert("Você saiu da sua conta.");
-  carregarComprasSalvas();
-  carregarMetricas();
 }
 
 // Alternar Filtro de Compras (Minhas Notas vs Todas da Comunidade)
