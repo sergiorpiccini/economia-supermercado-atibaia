@@ -471,6 +471,17 @@ app.get('/api/metricas', async (req, res) => {
   }
 });
 
+// Endpoint para Extrato Detalhado de Economia (Item a Item)
+app.get('/api/economia/extrato', async (req, res) => {
+  try {
+    const usuarioId = req.query.todas === 'true' ? null : (req.query.usuarioId || req.usuario?.id || null);
+    const extrato = await db.obterExtratoEconomia(usuarioId);
+    res.json({ sucesso: true, ...extrato });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
 // Endpoint de teste rápido / health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

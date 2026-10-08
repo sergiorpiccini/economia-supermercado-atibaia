@@ -463,10 +463,12 @@ async function salvarCompra(dados, usuarioId = 1) {
         const diffUltimo = precoFracionado - ultimoPreco;
         const pctDiffUltimo = ultimoPreco > 0 ? ((diffUltimo / ultimoPreco) * 100) : 0;
 
-        // Economia real: se pagou mais barato que a média ou maior preço registrado
+        // Economia real: calculada de forma justa contra o Preço Médio praticado em Atibaia
         let economiaItem = 0;
-        if (precoFracionado < maiorPreco) {
-          economiaItem = (maiorPreco - precoFracionado) * (qtd * packQtd);
+        let pctEconomia = 0;
+        if (precoFracionado < precoMedio) {
+          economiaItem = (precoMedio - precoFracionado) * (qtd * packQtd);
+          pctEconomia = ((precoMedio - precoFracionado) / precoMedio) * 100;
           totalEconomiaCompra += economiaItem;
         }
 
@@ -477,8 +479,11 @@ async function salvarCompra(dados, usuarioId = 1) {
           menorPreco: Number(menorPreco.toFixed(2)),
           precoMedio: Number(precoMedio.toFixed(2)),
           diffUltimo: Number(diffUltimo.toFixed(2)),
+          diffMedia: Number((precoFracionado - precoMedio).toFixed(2)),
           pctDiffUltimo: Number(pctDiffUltimo.toFixed(1)),
+          pctEconomia: Number(pctEconomia.toFixed(1)),
           economiaItem: Number(economiaItem.toFixed(2)),
+          abaixoDaMedia: precoFracionado < precoMedio,
           historicoQtd: historicoAnterior.length
         };
       }
@@ -612,7 +617,7 @@ async function listarCompras(usuarioId = null) {
   return compras;
 }
 
-// Detalha uma compra com todos os itens e autor do escaneamento
+// Detalha uma compra com todos os itens, autor e análise de economia item a item
 async function detalharCompra(compraId) {
   const compra = await getQuery(`
     SELECT c.*, e.nome as estabelecimento_nome, e.nome_fantasia as estabelecimento_fantasia,
@@ -634,7 +639,137 @@ async function detalharCompra(compraId) {
     ORDER BY i.id ASC
   `, [compraId]);
 
-  return { ...compra, itens };
+  // Enriquece cada item com a comparação estatística da cidade
+  const itensEnriquecidos = await Promise.all(itens.map(async (item) => {
+    const historico = await allQuery(`
+      SELECT h.valor_unitario, h.preco_fracionado, COALESCE(e.nome_fantasia, e.nome) as mercado
+      FROM historico_precos h
+      JOIN estabelecimentos e ON h.estabelecimento_id = e.id
+      WHERE h.produto_id = ?
+    `, [item.produto_id]);
+
+    const precos = historico.map(h => Number(h.preco_fracionado || h.valor_unitario) || 0).filter(p => p > 0);
+    const precoPago = Number(item.preco_unitario_fracionado || item.valor_unitario) || 0;
+    
+    let precoMedio = 0;
+    let menorPreco = precoPago;
+    let maiorPreco = precoPago;
+    let economiaItem = 0;
+    let pctEconomia = 0;
+    let statusEconomia = 'sem_historico'; // 'abaixo_media', 'na_media', 'acima_media', 'sem_historico'
+
+    if (precos.length > 1) {
+      precoMedio = Number((precos.reduce((a, b) => a + b, 0) / precos.length).toFixed(2));
+      menorPreco = Number(Math.min(...precos).toFixed(2));
+      maiorPreco = Number(Math.max(...precos).toFixed(2));
+
+      if (precoPago < precoMedio) {
+        const diffUnit = precoMedio - precoPago;
+        economiaItem = Number((diffUnit * (item.quantidade * (item.pack_qtd || 1))).toFixed(2));
+        pctEconomia = Number(((diffUnit / precoMedio) * 100).toFixed(1));
+        statusEconomia = 'abaixo_media';
+      } else if (precoPago > precoMedio) {
+        statusEconomia = 'acima_media';
+      } else {
+        statusEconomia = 'na_media';
+      }
+    }
+
+    return {
+      ...item,
+      comparacao: {
+        precoMedio,
+        menorPreco,
+        maiorPreco,
+        economiaItem,
+        pctEconomia,
+        statusEconomia,
+        totalRegistros: precos.length
+      }
+    };
+  }));
+
+  return { ...compra, itens: itensEnriquecidos };
+}
+
+// Extrato Completo e Transparente de Economia (Item por Item)
+async function obterExtratoEconomia(usuarioId = null) {
+  let userClause = '';
+  const params = [];
+  if (usuarioId) {
+    userClause = ' WHERE c.usuario_id = ?';
+    params.push(usuarioId);
+  }
+
+  const itens = await allQuery(`
+    SELECT i.id, i.nome_original, i.quantidade, i.unidade, i.valor_unitario, i.valor_total,
+           i.eh_pack, i.pack_qtd, i.preco_unitario_fracionado,
+           p.id as produto_id, p.nome_padrao,
+           c.id as compra_id, c.data_emissao, c.usuario_id,
+           e.nome as mercado_razao, COALESCE(e.nome_fantasia, e.nome) as mercado_nome,
+           u.nome as usuario_nome
+    FROM itens_compra i
+    JOIN compras c ON i.compra_id = c.id
+    JOIN produtos p ON i.produto_id = p.id
+    JOIN estabelecimentos e ON c.estabelecimento_id = e.id
+    LEFT JOIN usuarios u ON c.usuario_id = u.id
+    ${userClause}
+    ORDER BY c.id DESC, i.id ASC
+  `, params);
+
+  const extratoItens = [];
+  let totalEconomiaGeral = 0;
+
+  for (const item of itens) {
+    const historico = await allQuery(`
+      SELECT h.valor_unitario, h.preco_fracionado, COALESCE(e.nome_fantasia, e.nome) as mercado
+      FROM historico_precos h
+      JOIN estabelecimentos e ON h.estabelecimento_id = e.id
+      WHERE h.produto_id = ?
+    `, [item.produto_id]);
+
+    const precos = historico.map(h => Number(h.preco_fracionado || h.valor_unitario) || 0).filter(p => p > 0);
+    const precoPago = Number(item.preco_unitario_fracionado || item.valor_unitario) || 0;
+
+    if (precos.length > 1) {
+      const precoMedio = Number((precos.reduce((a, b) => a + b, 0) / precos.length).toFixed(2));
+      const menorPreco = Number(Math.min(...precos).toFixed(2));
+      const maiorPreco = Number(Math.max(...precos).toFixed(2));
+
+      if (precoPago < precoMedio) {
+        const diffUnit = precoMedio - precoPago;
+        const economiaTotalItem = Number((diffUnit * (item.quantidade * (item.pack_qtd || 1))).toFixed(2));
+        const pctEconomia = Number(((diffUnit / precoMedio) * 100).toFixed(1));
+
+        totalEconomiaGeral += economiaTotalItem;
+
+        extratoItens.push({
+          itemId: item.id,
+          compraId: item.compra_id,
+          dataEmissao: item.data_emissao,
+          mercadoNome: item.mercado_nome,
+          usuarioNome: item.usuario_nome,
+          produtoNome: item.nome_padrao || item.nome_original,
+          quantidade: item.quantidade,
+          unidade: item.unidade,
+          precoPago,
+          precoMedio,
+          maiorPreco,
+          economiaTotalItem,
+          pctEconomia
+        });
+      }
+    }
+  }
+
+  // Ordena os itens onde mais se economizou no topo
+  extratoItens.sort((a, b) => b.economiaTotalItem - a.economiaTotalItem);
+
+  return {
+    totalEconomia: Number(totalEconomiaGeral.toFixed(2)),
+    totalItensComEconomia: extratoItens.length,
+    extrato: extratoItens
+  };
 }
 
 // Exclui uma compra
@@ -930,6 +1065,7 @@ module.exports = {
   excluirCompra,
   obterHistoricoProduto,
   obterMetricasGlobais,
+  obterExtratoEconomia,
   listarTodosProdutos,
   criarGrupoComparacao,
   listarGruposComparacao,
