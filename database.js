@@ -142,15 +142,126 @@ async function initDb() {
     }
   }
 
-  // Garante que existe ao menos 1 usuário padrão (Administrador / Criador)
-  const hashPadrao = hashPassword('123456');
+  // Se o banco estiver vazio (como no primeiro deploy na nuvem Turso), restaura todo o histórico de compras e produtos
+  await povoarDadosHistoricosSeVazio();
+}
+
+async function povoarDadosHistoricosSeVazio() {
   try {
-    await runQuery(`
-      INSERT OR IGNORE INTO usuarios (id, nome, email, senha_hash, bairro, cidade)
-      VALUES (1, 'Você (Criador)', 'admin@atibaia.com', ?, 'Lucas / Centro', 'Atibaia - SP')
-    `, [hashPadrao]);
-    await runQuery('UPDATE compras SET usuario_id = 1 WHERE usuario_id IS NULL');
-  } catch (e) {}
+    const prodCountRow = await getQuery('SELECT COUNT(*) as total FROM produtos');
+    const total = prodCountRow ? Number(prodCountRow.total || 0) : 0;
+    if (total > 0) return; // Já possui dados
+
+    console.log('[Database] Povoando dados históricos e notas fiscais anteriores no banco permanente...');
+
+    // 1. Estabelecimentos
+    const ests = [
+      { id: 1, nome: "COMERCIAL BRASIL DE ATIBAIA LTDA", nome_fantasia: "Nagumo (Lucas)", cnpj: "00386708000475", endereco: "Av. Lucas Nogueira Garcez, 2827 - Vila Giglio, Atibaia - SP" },
+      { id: 3, nome: "UNISUPER UNIAO SUPERMERCADO LOJA 10", nome_fantasia: "União (Alvinópolis)", cnpj: "72995475001067", endereco: "Av. Dona Gertrudes, 747 - Alvinópolis, Atibaia - SP" }
+    ];
+    for (const e of ests) {
+      await runQuery('INSERT OR IGNORE INTO estabelecimentos (id, nome, nome_fantasia, cnpj, endereco) VALUES (?, ?, ?, ?, ?)', [e.id, e.nome, e.nome_fantasia, e.cnpj, e.endereco]);
+    }
+
+    // 2. Produtos
+    const prods = [
+      { id: 1, nome_padrao: "DETERGENTE YPE NEUTRO 500ML (PACK 6X500ML)", codigo: "206210", unidade: "UN" },
+      { id: 2, nome_padrao: "Cafe", codigo: null, unidade: "UN" },
+      { id: 3, nome_padrao: "PAO DE FORMA VISCONTI INTEGRAL 400G", codigo: "152426", unidade: "UN" },
+      { id: 4, nome_padrao: "SABONETE ALBANY 80G HIDRATACAO INTENSIVA", codigo: "238094", unidade: "UN" },
+      { id: 5, nome_padrao: "PAO FRANCES KG", codigo: "8414", unidade: "KG" },
+      { id: 6, nome_padrao: "PRESUNTO COZIDO CERATTI KG", codigo: "2786", unidade: "KG" },
+      { id: 7, nome_padrao: "QUEIJO MUSSARELA FATIADO KG", codigo: "345", unidade: "KG" },
+      { id: 8, nome_padrao: "OVOS BRANCOS EXTRA PRETI PVC C/ 20", codigo: "36493", unidade: "UN" },
+      { id: 9, nome_padrao: "BACON SEARA TABLETE KG", codigo: "2370", unidade: "KG" },
+      { id: 10, nome_padrao: "MARGARINA QUALY 500G C/ SAL", codigo: "121385", unidade: "UN" },
+      { id: 11, nome_padrao: "ATUM SOLIDO EM OLEO 88 170G", codigo: "225251", unidade: "UN" },
+      { id: 12, nome_padrao: "OLEO MISTO SOJA E AZEITE CASTELO 500ML", codigo: "34621", unidade: "UN" },
+      { id: 13, nome_padrao: "ALHO PICADO GARLIC 1KG", codigo: "78771", unidade: "UN" },
+      { id: 14, nome_padrao: "BOMBOM DA ALCATRA KG", codigo: "9821", unidade: "KG" },
+      { id: 16, nome_padrao: "CEBOLA KG", codigo: "913", unidade: "KG" }
+    ];
+    for (const p of prods) {
+      await runQuery('INSERT OR IGNORE INTO produtos (id, nome_padrao, codigo, unidade) VALUES (?, ?, ?, ?)', [p.id, p.nome_padrao, p.codigo, p.unidade]);
+    }
+
+    // 3. Compras
+    const compras = [
+      { id: 5, estabelecimento_id: 1, usuario_id: 1, url_nfce: "https://www.nfce.fazenda.sp.gov.br/qrcode?p=35261000386708000475651070000729731258012928|3|1", data_emissao: "06/10/2026 10:51:24", valor_total: 30.68, total_itens: 4, created_at: "2026-10-06 16:06:13" },
+      { id: 6, estabelecimento_id: 3, usuario_id: 1, url_nfce: "https://www.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaQRCode.aspx?p=35261072995475001067651170000350651117251666|2|1|2|2D1F1DAA74DAF6BB16E596DB88E4871BE418236E", data_emissao: "06/10/2026 16:18:00", valor_total: 32.59, total_itens: 4, created_at: "2026-10-06 19:33:53" },
+      { id: 7, estabelecimento_id: 1, usuario_id: 1, url_nfce: "https://www.nfce.fazenda.sp.gov.br/qrcode?p=35261000386708000475651030001161981491145357|3|1", data_emissao: "07/10/2026 11:19:25", valor_total: 33.33, total_itens: 3, created_at: "2026-10-07 14:56:52" },
+      { id: 8, estabelecimento_id: 3, usuario_id: 1, url_nfce: "https://www.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaQRCode.aspx?p=35260972995475001067651180000574041118168257|2|1|2|1C667DCF8BF03E485F2DA1CBF4EFA95C6C7EB0C0", data_emissao: "30/09/2026 11:56:00", valor_total: 113.9, total_itens: 11, created_at: "2026-10-07 15:04:23" }
+    ];
+    for (const c of compras) {
+      await runQuery('INSERT OR IGNORE INTO compras (id, estabelecimento_id, usuario_id, url_nfce, data_emissao, valor_total, total_itens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [c.id, c.estabelecimento_id, c.usuario_id, c.url_nfce, c.data_emissao, c.valor_total, c.total_itens, c.created_at]);
+    }
+
+    // 4. Itens da Compra
+    const itens = [
+      { id: 10, compra_id: 5, produto_id: 1, nome_original: "LAVA LOUCAS LIQ.YPE 6X500ML 10 D.NEUTRO", quantidade: 1, unidade: "UN", valor_unitario: 15.93, valor_total: 15.93, eh_pack: 1, pack_qtd: 6, preco_unitario_fracionado: 2.65, preco_medida_padrao: "R$ 5.30/L" },
+      { id: 11, compra_id: 5, produto_id: 3, nome_original: "VISCONTI/PAO FORMA 400G.36 INTEGRAL", quantidade: 1, unidade: "UN", valor_unitario: 8.79, valor_total: 8.79, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 8.79, preco_medida_padrao: null },
+      { id: 12, compra_id: 5, produto_id: 4, nome_original: "SABON.ALBANY 80G. HIDR.INTENSIVA", quantidade: 3, unidade: "UN", valor_unitario: 1.49, valor_total: 4.47, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 1.49, preco_medida_padrao: null },
+      { id: 13, compra_id: 5, produto_id: 4, nome_original: "SABON.ALBANY 80G. HIDR.INTENSIVA", quantidade: 1, unidade: "UN", valor_unitario: 1.49, valor_total: 1.49, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 1.49, preco_medida_padrao: null },
+      { id: 14, compra_id: 6, produto_id: 5, nome_original: "PAO FRANCES KG", quantidade: 0.364, unidade: "KG", valor_unitario: 15.494505, valor_total: 5.64, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 15.494505, preco_medida_padrao: null },
+      { id: 15, compra_id: 6, produto_id: 6, nome_original: "PRESUNTO COZ CERATTI KG", quantidade: 0.114, unidade: "KG", valor_unitario: 29.912281, valor_total: 3.41, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 29.912281, preco_medida_padrao: null },
+      { id: 16, compra_id: 6, produto_id: 7, nome_original: "QJO MUSS FAT KG", quantidade: 0.316, unidade: "KG", valor_unitario: 42.911392, valor_total: 13.56, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 42.911392, preco_medida_padrao: null },
+      { id: 17, compra_id: 6, produto_id: 8, nome_original: "OVOS PRETI TP EXTRA BCO PVC C/ 20", quantidade: 1, unidade: "UN", valor_unitario: 9.98, valor_total: 9.98, eh_pack: 1, pack_qtd: 20, preco_unitario_fracionado: 0.5, preco_medida_padrao: null },
+      { id: 18, compra_id: 7, produto_id: 9, nome_original: "BACON SEARA COZ.TABLETE kg", quantidade: 0.18, unidade: "KG", valor_unitario: 65.9, valor_total: 11.86, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 65.9, preco_medida_padrao: null },
+      { id: 19, compra_id: 7, produto_id: 10, nome_original: "MARG.QUALY 500G. C/SAL", quantidade: 1, unidade: "UN", valor_unitario: 7.98, valor_total: 7.98, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 7.98, preco_medida_padrao: null },
+      { id: 20, compra_id: 7, produto_id: 11, nome_original: "ATUM 88 173G/140G.SOLIDO OLEO", quantidade: 1, unidade: "UN", valor_unitario: 13.49, valor_total: 13.49, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 13.49, preco_medida_padrao: null },
+      { id: 21, compra_id: 8, produto_id: 12, nome_original: "OLEO MISTO SOJA E AZEITE CASTELO 500ML", quantidade: 1, unidade: "UN", valor_unitario: 16.98, valor_total: 16.98, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 16.98, preco_medida_padrao: null },
+      { id: 22, compra_id: 8, produto_id: 13, nome_original: "ALHO PICADO GARLIC 1KG", quantidade: 1, unidade: "UN", valor_unitario: 20.98, valor_total: 20.98, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 20.98, preco_medida_padrao: null },
+      { id: 23, compra_id: 8, produto_id: 5, nome_original: "PAO FRANCES KG", quantidade: 0.38, unidade: "KG", valor_unitario: 15.5, valor_total: 5.89, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 15.5, preco_medida_padrao: null },
+      { id: 24, compra_id: 8, produto_id: 7, nome_original: "QJO MUSS FAT KG", quantidade: 0.322, unidade: "KG", valor_unitario: 59.906832, valor_total: 19.29, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 59.906832, preco_medida_padrao: null },
+      { id: 25, compra_id: 8, produto_id: 6, nome_original: "PRESUNTO COZ CERATTI KG", quantidade: 0.212, unidade: "KG", valor_unitario: 29.90566, valor_total: 6.34, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 29.90566, preco_medida_padrao: null },
+      { id: 26, compra_id: 8, produto_id: 14, nome_original: "BOMBOM DA ALCATRA KG", quantidade: 0.234, unidade: "KG", valor_unitario: 76.923077, valor_total: 18, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 76.923077, preco_medida_padrao: null },
+      { id: 27, compra_id: 8, produto_id: 14, nome_original: "BOMBOM DA ALCATRA KG", quantidade: 0.214, unidade: "KG", valor_unitario: 76.915888, valor_total: 16.46, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 76.915888, preco_medida_padrao: null },
+      { id: 28, compra_id: 8, produto_id: 4, nome_original: "SAB ALBANY HID INTENSIVA 80G", quantidade: 1, unidade: "UN", valor_unitario: 1.68, valor_total: 1.68, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 1.68, preco_medida_padrao: null },
+      { id: 29, compra_id: 8, produto_id: 4, nome_original: "SAB ALBANY HID INTENSIVA 80G", quantidade: 1, unidade: "UN", valor_unitario: 1.68, valor_total: 1.68, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 1.68, preco_medida_padrao: null },
+      { id: 30, compra_id: 8, produto_id: 4, nome_original: "SAB ALBANY HID INTENSIVA 80G", quantidade: 1, unidade: "UN", valor_unitario: 1.68, valor_total: 1.68, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 1.68, preco_medida_padrao: null },
+      { id: 31, compra_id: 8, produto_id: 16, nome_original: "CEBOLA KG", quantidade: 0.548, unidade: "KG", valor_unitario: 8.978102, valor_total: 4.92, eh_pack: 0, pack_qtd: 1, preco_unitario_fracionado: 8.978102, preco_medida_padrao: null }
+    ];
+    for (const i of itens) {
+      await runQuery('INSERT OR IGNORE INTO itens_compra (id, compra_id, produto_id, nome_original, quantidade, unidade, valor_unitario, valor_total, eh_pack, pack_qtd, preco_unitario_fracionado, preco_medida_padrao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [i.id, i.compra_id, i.produto_id, i.nome_original, i.quantidade, i.unidade, i.valor_unitario, i.valor_total, i.eh_pack, i.pack_qtd, i.preco_unitario_fracionado, i.preco_medida_padrao]);
+    }
+
+    // 5. Histórico de Preços
+    const hist = [
+      { id: 10, produto_id: 1, estabelecimento_id: 1, compra_id: 5, valor_unitario: 15.93, preco_fracionado: 2.65, data_registro: "06/10/2026 10:51:24" },
+      { id: 11, produto_id: 3, estabelecimento_id: 1, compra_id: 5, valor_unitario: 8.79, preco_fracionado: 8.79, data_registro: "06/10/2026 10:51:24" },
+      { id: 12, produto_id: 4, estabelecimento_id: 1, compra_id: 5, valor_unitario: 1.49, preco_fracionado: 1.49, data_registro: "06/10/2026 10:51:24" },
+      { id: 13, produto_id: 4, estabelecimento_id: 1, compra_id: 5, valor_unitario: 1.49, preco_fracionado: 1.49, data_registro: "06/10/2026 10:51:24" },
+      { id: 14, produto_id: 5, estabelecimento_id: 3, compra_id: 6, valor_unitario: 15.494505, preco_fracionado: 15.494505, data_registro: "06/10/2026 16:18:00" },
+      { id: 15, produto_id: 6, estabelecimento_id: 3, compra_id: 6, valor_unitario: 29.912281, preco_fracionado: 29.912281, data_registro: "06/10/2026 16:18:00" },
+      { id: 16, produto_id: 7, estabelecimento_id: 3, compra_id: 6, valor_unitario: 42.911392, preco_fracionado: 42.911392, data_registro: "06/10/2026 16:18:00" },
+      { id: 17, produto_id: 8, estabelecimento_id: 3, compra_id: 6, valor_unitario: 9.98, preco_fracionado: 0.5, data_registro: "06/10/2026 16:18:00" },
+      { id: 18, produto_id: 9, estabelecimento_id: 1, compra_id: 7, valor_unitario: 65.9, preco_fracionado: 65.9, data_registro: "07/10/2026 11:19:25" },
+      { id: 19, produto_id: 10, estabelecimento_id: 1, compra_id: 7, valor_unitario: 7.98, preco_fracionado: 7.98, data_registro: "07/10/2026 11:19:25" },
+      { id: 20, produto_id: 11, estabelecimento_id: 1, compra_id: 7, valor_unitario: 13.49, preco_fracionado: 13.49, data_registro: "07/10/2026 11:19:25" },
+      { id: 21, produto_id: 12, estabelecimento_id: 3, compra_id: 8, valor_unitario: 16.98, preco_fracionado: 16.98, data_registro: "30/09/2026 11:56:00" },
+      { id: 22, produto_id: 13, estabelecimento_id: 3, compra_id: 8, valor_unitario: 20.98, preco_fracionado: 20.98, data_registro: "30/09/2026 11:56:00" },
+      { id: 23, produto_id: 5, estabelecimento_id: 3, compra_id: 8, valor_unitario: 15.5, preco_fracionado: 15.5, data_registro: "30/09/2026 11:56:00" },
+      { id: 24, produto_id: 7, estabelecimento_id: 3, compra_id: 8, valor_unitario: 59.906832, preco_fracionado: 59.906832, data_registro: "30/09/2026 11:56:00" },
+      { id: 25, produto_id: 6, estabelecimento_id: 3, compra_id: 8, valor_unitario: 29.90566, preco_fracionado: 29.90566, data_registro: "30/09/2026 11:56:00" },
+      { id: 26, produto_id: 14, estabelecimento_id: 3, compra_id: 8, valor_unitario: 76.923077, preco_fracionado: 76.923077, data_registro: "30/09/2026 11:56:00" },
+      { id: 27, produto_id: 14, estabelecimento_id: 3, compra_id: 8, valor_unitario: 76.915888, preco_fracionado: 76.915888, data_registro: "30/09/2026 11:56:00" },
+      { id: 28, produto_id: 4, estabelecimento_id: 3, compra_id: 8, valor_unitario: 1.68, preco_fracionado: 1.68, data_registro: "30/09/2026 11:56:00" },
+      { id: 29, produto_id: 4, estabelecimento_id: 3, compra_id: 8, valor_unitario: 1.68, preco_fracionado: 1.68, data_registro: "30/09/2026 11:56:00" },
+      { id: 30, produto_id: 4, estabelecimento_id: 3, compra_id: 8, valor_unitario: 1.68, preco_fracionado: 1.68, data_registro: "30/09/2026 11:56:00" },
+      { id: 31, produto_id: 16, estabelecimento_id: 3, compra_id: 8, valor_unitario: 8.978102, preco_fracionado: 8.978102, data_registro: "30/09/2026 11:56:00" }
+    ];
+    for (const h of hist) {
+      await runQuery('INSERT OR IGNORE INTO historico_precos (id, produto_id, estabelecimento_id, compra_id, valor_unitario, preco_fracionado, data_registro) VALUES (?, ?, ?, ?, ?, ?, ?)', [h.id, h.produto_id, h.estabelecimento_id, h.compra_id, h.valor_unitario, h.preco_fracionado, h.data_registro]);
+    }
+
+    // 6. Grupos de Comparação
+    await runQuery("INSERT OR IGNORE INTO grupos_comparacao (id, nome_grupo, descricao) VALUES (1, 'Sabonetes do Dia a Dia', 'Comparativo de marcas de sabonete')");
+    await runQuery('INSERT OR IGNORE INTO itens_grupo_comparacao (grupo_id, produto_id) VALUES (1, 4)');
+
+    console.log('[Database] ✅ Histórico e notas fiscais restaurados com sucesso no banco permanente!');
+  } catch (err) {
+    console.warn('[Database] Aviso ao restaurar histórico inicial:', err.message);
+  }
 }
 
 // Executa queries genéricas com suporte híbrido (Nuvem LibSQL / Local SQLite)
@@ -233,7 +344,7 @@ async function salvarCompra(dados, usuarioId = 1) {
 
   // Sempre atualiza nome fantasia e endereço com a versão resolvida
   await runQuery(
-    'UPDATE estabelecimentos SET nome_fantasia = ?, endereco = COALESCE(NULLIF(?, ""), endereco) WHERE id = ?',
+    "UPDATE estabelecimentos SET nome_fantasia = ?, endereco = COALESCE(NULLIF(?, ''), endereco) WHERE id = ?",
     [estResolvido.nomeFantasia, estResolvido.endereco, estId]
   );
 
