@@ -113,6 +113,25 @@ async function initDb() {
       UNIQUE(grupo_id, produto_id),
       FOREIGN KEY (grupo_id) REFERENCES grupos_comparacao(id) ON DELETE CASCADE,
       FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS listas_compras (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      usuario_id INTEGER NOT NULL DEFAULT 1,
+      nome_lista TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS itens_lista_compras (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lista_id INTEGER NOT NULL,
+      produto_id INTEGER NOT NULL,
+      quantidade REAL NOT NULL DEFAULT 1.0,
+      observacao TEXT,
+      comprado INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (lista_id) REFERENCES listas_compras(id) ON DELETE CASCADE,
+      FOREIGN KEY (produto_id) REFERENCES produtos(id)
     )`
   ];
 
@@ -1084,6 +1103,362 @@ async function excluirGrupoComparacao(grupoId) {
   return { sucesso: true };
 }
 
+// ==========================================
+// 📋 LISTAS DE COMPRAS & OTIMIZADOR DE CESTA
+// ==========================================
+
+async function criarListaCompras(usuarioId = 1, nomeLista = 'Minha Lista de Compras') {
+  const nome = (nomeLista || 'Minha Lista de Compras').trim();
+  const res = await runQuery(
+    'INSERT INTO listas_compras (usuario_id, nome_lista) VALUES (?, ?)',
+    [usuarioId, nome]
+  );
+  return { id: res.id, nome_lista: nome, total_itens: 0, itens_comprados: 0 };
+}
+
+async function listarListasCompras(usuarioId = 1) {
+  const listas = await allQuery(`
+    SELECT l.id, l.nome_lista, l.created_at, l.updated_at,
+           COUNT(i.id) as total_itens,
+           SUM(CASE WHEN i.comprado = 1 THEN 1 ELSE 0 END) as itens_comprados
+    FROM listas_compras l
+    LEFT JOIN itens_lista_compras i ON l.id = i.lista_id
+    WHERE l.usuario_id = ?
+    GROUP BY l.id
+    ORDER BY l.id DESC
+  `, [usuarioId]);
+
+  if (listas.length === 0) {
+    const nova = await criarListaCompras(usuarioId, 'Minha Lista de Compras');
+    return [{ ...nova, total_itens: 0, itens_comprados: 0, created_at: new Date().toISOString() }];
+  }
+
+  return listas;
+}
+
+async function obterListaCompras(listaId, usuarioId = 1) {
+  const lista = await getQuery('SELECT * FROM listas_compras WHERE id = ? AND usuario_id = ?', [listaId, usuarioId]);
+  if (!lista) return null;
+
+  const itens = await allQuery(`
+    SELECT i.id as item_id, i.produto_id, i.quantidade, i.observacao, i.comprado,
+           p.nome_padrao, p.codigo, p.unidade,
+           ROUND(AVG(h.valor_unitario), 2) as preco_medio_cidade,
+           MIN(h.valor_unitario) as menor_preco_cidade
+    FROM itens_lista_compras i
+    JOIN produtos p ON i.produto_id = p.id
+    LEFT JOIN historico_precos h ON p.id = h.produto_id
+    WHERE i.lista_id = ?
+    GROUP BY i.id
+    ORDER BY i.comprado ASC, i.id DESC
+  `, [listaId]);
+
+  return {
+    ...lista,
+    itens
+  };
+}
+
+async function adicionarItemListaCompras(listaId, produtoId, quantidade = 1, observacao = '') {
+  const qtd = parseFloat(quantidade) || 1.0;
+  const itemExistente = await getQuery(
+    'SELECT id, quantidade FROM itens_lista_compras WHERE lista_id = ? AND produto_id = ?',
+    [listaId, produtoId]
+  );
+
+  if (itemExistente) {
+    const novaQtd = Number((itemExistente.quantidade + qtd).toFixed(3));
+    await runQuery(
+      "UPDATE itens_lista_compras SET quantidade = ?, observacao = COALESCE(NULLIF(?, ''), observacao) WHERE id = ?",
+      [novaQtd, observacao, itemExistente.id]
+    );
+    await runQuery("UPDATE listas_compras SET updated_at = datetime('now') WHERE id = ?", [listaId]);
+    return { id: itemExistente.id, atualizado: true, novaQtd };
+  }
+
+  const res = await runQuery(
+    'INSERT INTO itens_lista_compras (lista_id, produto_id, quantidade, observacao) VALUES (?, ?, ?, ?)',
+    [listaId, produtoId, qtd, observacao || null]
+  );
+  await runQuery("UPDATE listas_compras SET updated_at = datetime('now') WHERE id = ?", [listaId]);
+  return { id: res.id, criado: true };
+}
+
+async function atualizarItemListaCompras(itemId, quantidade, comprado, observacao) {
+  const campos = [];
+  const params = [];
+
+  if (quantidade !== undefined && quantidade !== null) {
+    campos.push('quantidade = ?');
+    params.push(parseFloat(quantidade) || 1.0);
+  }
+  if (comprado !== undefined && comprado !== null) {
+    campos.push('comprado = ?');
+    params.push(comprado ? 1 : 0);
+  }
+  if (observacao !== undefined) {
+    campos.push('observacao = ?');
+    params.push(observacao);
+  }
+
+  if (campos.length === 0) return { sucesso: true };
+
+  params.push(itemId);
+  await runQuery(`UPDATE itens_lista_compras SET ${campos.join(', ')} WHERE id = ?`, params);
+  return { sucesso: true };
+}
+
+async function removerItemListaCompras(itemId) {
+  await runQuery('DELETE FROM itens_lista_compras WHERE id = ?', [itemId]);
+  return { sucesso: true };
+}
+
+async function excluirListaCompras(listaId, usuarioId = 1) {
+  await runQuery('DELETE FROM itens_lista_compras WHERE lista_id = ?', [listaId]);
+  await runQuery('DELETE FROM listas_compras WHERE id = ? AND usuario_id = ?', [listaId, usuarioId]);
+  return { sucesso: true };
+}
+
+/**
+ * Motor de Otimização e Comparação de Cesta de Compras em Atibaia
+ */
+async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
+  let itens = [];
+  if (itensAdHoc && Array.isArray(itensAdHoc) && itensAdHoc.length > 0) {
+    itens = itensAdHoc;
+  } else if (listaId) {
+    itens = await allQuery(`
+      SELECT i.produto_id, i.quantidade, p.nome_padrao, p.unidade, p.codigo
+      FROM itens_lista_compras i
+      JOIN produtos p ON i.produto_id = p.id
+      WHERE i.lista_id = ?
+    `, [listaId]);
+  }
+
+  if (itens.length === 0) {
+    return {
+      totalItens: 0,
+      rankingMercados: [],
+      melhorMercadoUnico: null,
+      cenarioDividido: null,
+      comparativoItens: []
+    };
+  }
+
+  const produtoIds = itens.map(i => i.produto_id);
+  const placeholders = produtoIds.map(() => '?').join(',');
+
+  // 1. Obter todos os estabelecimentos
+  const todosMercados = await allQuery('SELECT id, nome, nome_fantasia, endereco FROM estabelecimentos ORDER BY id ASC');
+  const mapaMercados = new Map();
+  todosMercados.forEach(m => {
+    mapaMercados.set(m.id, {
+      id: m.id,
+      nome: m.nome_fantasia || m.nome,
+      endereco: m.endereco || 'Atibaia/SP'
+    });
+  });
+
+  // 2. Obter os preços mais recentes de cada produto em cada mercado
+  const historico = await allQuery(`
+    SELECT h.produto_id, h.estabelecimento_id, h.valor_unitario, h.preco_fracionado, h.data_registro, h.id as hist_id
+    FROM historico_precos h
+    WHERE h.produto_id IN (${placeholders})
+    ORDER BY h.id DESC
+  `, produtoIds);
+
+  const mapaPrecos = new Map();
+  historico.forEach(row => {
+    if (!mapaPrecos.has(row.produto_id)) {
+      mapaPrecos.set(row.produto_id, new Map());
+    }
+    const porMercado = mapaPrecos.get(row.produto_id);
+    if (!porMercado.has(row.estabelecimento_id)) {
+      porMercado.set(row.estabelecimento_id, {
+        preco: Number(row.valor_unitario),
+        precoFracionado: row.preco_fracionado ? Number(row.preco_fracionado) : Number(row.valor_unitario),
+        dataRegistro: row.data_registro
+      });
+    }
+  });
+
+  // 3. Analisar cada item da lista
+  const comparativoItens = [];
+  const mercadosComPreco = new Set();
+
+  itens.forEach(item => {
+    const pId = item.produto_id;
+    const qtd = parseFloat(item.quantidade) || 1.0;
+    const precosItemMercados = mapaPrecos.get(pId) || new Map();
+
+    const precosPorEst = {};
+    let menorPrecoItem = Infinity;
+    let melhorEstId = null;
+    let somaPrecos = 0;
+    let contPrecos = 0;
+
+    precosItemMercados.forEach((dadosPreco, estId) => {
+      mercadosComPreco.add(estId);
+      const estInfo = mapaMercados.get(estId);
+      const precoUnit = dadosPreco.preco;
+      const subtotalItem = Number((precoUnit * qtd).toFixed(2));
+
+      precosPorEst[estId] = {
+        mercadoId: estId,
+        mercadoNome: estInfo ? estInfo.nome : `Mercado #${estId}`,
+        precoUnitario: precoUnit,
+        subtotal: subtotalItem,
+        dataRegistro: dadosPreco.dataRegistro
+      };
+
+      somaPrecos += precoUnit;
+      contPrecos++;
+
+      if (precoUnit < menorPrecoItem) {
+        menorPrecoItem = precoUnit;
+        melhorEstId = estId;
+      }
+    });
+
+    const precoMedioItem = contPrecos > 0 ? Number((somaPrecos / contPrecos).toFixed(2)) : 0;
+
+    comparativoItens.push({
+      produtoId: pId,
+      nome: item.nome_padrao,
+      unidade: item.unidade || 'UN',
+      quantidade: qtd,
+      precoMedio: precoMedioItem,
+      menorPreco: menorPrecoItem < Infinity ? menorPrecoItem : null,
+      melhorMercadoId: melhorEstId,
+      melhorMercadoNome: melhorEstId && mapaMercados.get(melhorEstId) ? mapaMercados.get(melhorEstId).nome : null,
+      precosPorMercado: precosPorEst
+    });
+  });
+
+  // 4. Calcular Cesta em Cada Estabelecimento (Cenário Monomercado)
+  const rankingMercados = [];
+
+  mercadosComPreco.forEach(estId => {
+    const estInfo = mapaMercados.get(estId) || { id: estId, nome: `Mercado #${estId}`, endereco: '' };
+    let totalCesta = 0;
+    let itensEncontrados = 0;
+    const itensFaltantes = [];
+    const detalhesItens = [];
+
+    comparativoItens.forEach(item => {
+      const precoEst = item.precosPorMercado[estId];
+      if (precoEst) {
+        totalCesta += precoEst.subtotal;
+        itensEncontrados++;
+        detalhesItens.push({
+          produtoId: item.produtoId,
+          nome: item.nome,
+          quantidade: item.quantidade,
+          precoUnitario: precoEst.precoUnitario,
+          subtotal: precoEst.subtotal,
+          disponivel: true
+        });
+      } else {
+        itensFaltantes.push({
+          produtoId: item.produtoId,
+          nome: item.nome,
+          quantidade: item.quantidade
+        });
+        detalhesItens.push({
+          produtoId: item.produtoId,
+          nome: item.nome,
+          quantidade: item.quantidade,
+          precoUnitario: null,
+          subtotal: null,
+          disponivel: false
+        });
+      }
+    });
+
+    const pctDisponibilidade = Number(((itensEncontrados / comparativoItens.length) * 100).toFixed(0));
+
+    rankingMercados.push({
+      mercadoId: estId,
+      mercadoNome: estInfo.nome,
+      endereco: estInfo.endereco,
+      totalCesta: Number(totalCesta.toFixed(2)),
+      itensEncontrados,
+      totalItensLista: comparativoItens.length,
+      pctDisponibilidade,
+      itensFaltantes,
+      detalhesItens
+    });
+  });
+
+  rankingMercados.sort((a, b) => {
+    if (b.itensEncontrados !== a.itensEncontrados) {
+      return b.itensEncontrados - a.itensEncontrados;
+    }
+    return a.totalCesta - b.totalCesta;
+  });
+
+  const melhorMercadoUnico = rankingMercados.length > 0 ? rankingMercados[0] : null;
+
+  // 5. Otimização do Cenário Dividido Inteligente
+  const divisaoPorMercado = {};
+  let totalCenarioDividido = 0;
+  let itensMapeadosDividido = 0;
+
+  comparativoItens.forEach(item => {
+    if (item.melhorMercadoId) {
+      const mId = item.melhorMercadoId;
+      if (!divisaoPorMercado[mId]) {
+        const info = mapaMercados.get(mId) || { id: mId, nome: `Mercado #${mId}`, endereco: '' };
+        divisaoPorMercado[mId] = {
+          mercadoId: mId,
+          mercadoNome: info.nome,
+          endereco: info.endereco,
+          subtotal: 0,
+          itens: []
+        };
+      }
+      const precoUnit = item.precosPorMercado[mId].precoUnitario;
+      const subtotalItem = Number((precoUnit * item.quantidade).toFixed(2));
+      divisaoPorMercado[mId].subtotal = Number((divisaoPorMercado[mId].subtotal + subtotalItem).toFixed(2));
+      divisaoPorMercado[mId].itens.push({
+        produtoId: item.produtoId,
+        nome: item.nome,
+        quantidade: item.quantidade,
+        unidade: item.unidade,
+        precoUnitario: precoUnit,
+        subtotal: subtotalItem
+      });
+
+      totalCenarioDividido += subtotalItem;
+      itensMapeadosDividido++;
+    }
+  });
+
+  totalCenarioDividido = Number(totalCenarioDividido.toFixed(2));
+  const gruposMercado = Object.values(divisaoPorMercado).sort((a, b) => b.subtotal - a.subtotal);
+
+  let economiaVsMelhorUnico = 0;
+  let pctEconomiaExtra = 0;
+  if (melhorMercadoUnico && melhorMercadoUnico.totalCesta > totalCenarioDividido && melhorMercadoUnico.itensEncontrados === itensMapeadosDividido) {
+    economiaVsMelhorUnico = Number((melhorMercadoUnico.totalCesta - totalCenarioDividido).toFixed(2));
+    pctEconomiaExtra = Number(((economiaVsMelhorUnico / melhorMercadoUnico.totalCesta) * 100).toFixed(1));
+  }
+
+  return {
+    totalItens: comparativoItens.length,
+    rankingMercados,
+    melhorMercadoUnico,
+    cenarioDividido: {
+      totalOtimizado: totalCenarioDividido,
+      totalMercadosEnvolvidos: gruposMercado.length,
+      gruposMercado,
+      economiaVsMelhorUnico,
+      pctEconomiaExtra
+    },
+    comparativoItens
+  };
+}
+
 initDb();
 
 module.exports = {
@@ -1104,6 +1479,15 @@ module.exports = {
   adicionarProdutoAoGrupo,
   removerProdutoDoGrupo,
   excluirGrupoComparacao,
+  criarListaCompras,
+  listarListasCompras,
+  obterListaCompras,
+  adicionarItemListaCompras,
+  atualizarItemListaCompras,
+  removerItemListaCompras,
+  excluirListaCompras,
+  otimizarListaCompras,
+  initDb,
   runQuery,
   getQuery,
   allQuery

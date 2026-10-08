@@ -22,7 +22,8 @@ const sslOptions = {
 };
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Parser universal / heurístico calibrado para portais SEFAZ (incluindo SP / RJ / RS)
@@ -477,6 +478,115 @@ app.get('/api/economia/extrato', async (req, res) => {
     const usuarioId = req.query.todas === 'true' ? null : (req.query.usuarioId || req.usuario?.id || null);
     const extrato = await db.obterExtratoEconomia(usuarioId);
     res.json({ sucesso: true, ...extrato });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// ==========================================
+// 📋 ROTAS: LISTAS DE COMPRAS & OTIMIZADOR
+// ==========================================
+
+// Listar todas as listas do usuário
+app.get('/api/listas', async (req, res) => {
+  try {
+    const usuarioId = req.usuario?.id || 1;
+    const listas = await db.listarListasCompras(usuarioId);
+    res.json({ sucesso: true, listas });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// Criar nova lista
+app.post('/api/listas', async (req, res) => {
+  try {
+    const usuarioId = req.usuario?.id || 1;
+    const { nome } = req.body;
+    const lista = await db.criarListaCompras(usuarioId, nome);
+    res.json({ sucesso: true, lista });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// Obter detalhes e itens de uma lista
+app.get('/api/listas/:id', async (req, res) => {
+  try {
+    const usuarioId = req.usuario?.id || 1;
+    const lista = await db.obterListaCompras(req.params.id, usuarioId);
+    if (!lista) return res.status(404).json({ sucesso: false, erro: 'Lista não encontrada.' });
+    res.json({ sucesso: true, lista });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// Excluir lista
+app.delete('/api/listas/:id', async (req, res) => {
+  try {
+    const usuarioId = req.usuario?.id || 1;
+    await db.excluirListaCompras(req.params.id, usuarioId);
+    res.json({ sucesso: true, mensagem: 'Lista excluída com sucesso.' });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// Adicionar produto à lista
+app.post('/api/listas/:id/itens', async (req, res) => {
+  try {
+    const { produto_id, quantidade, observacao } = req.body;
+    if (!produto_id) {
+      return res.status(400).json({ sucesso: false, erro: 'produto_id é obrigatório.' });
+    }
+    const resultado = await db.adicionarItemListaCompras(req.params.id, produto_id, quantidade, observacao);
+    res.json({ sucesso: true, resultado });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// Atualizar item da lista (quantidade, comprado, observação)
+app.put('/api/listas/itens/:itemId', async (req, res) => {
+  try {
+    const { quantidade, comprado, observacao } = req.body;
+    await db.atualizarItemListaCompras(req.params.itemId, quantidade, comprado, observacao);
+    res.json({ sucesso: true, mensagem: 'Item atualizado com sucesso.' });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// Remover item da lista
+app.delete('/api/listas/itens/:itemId', async (req, res) => {
+  try {
+    await db.removerItemListaCompras(req.params.itemId);
+    res.json({ sucesso: true, mensagem: 'Item removido da lista.' });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// Otimizar Cesta da Lista de Compras (Comparador Monomercado & Dividido)
+app.get('/api/listas/:id/otimizacao', async (req, res) => {
+  try {
+    const analise = await db.otimizarListaCompras(req.params.id);
+    res.json({ sucesso: true, analise });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// Simulação ad-hoc de cesta sem salvar lista prévia
+app.post('/api/listas/simular', async (req, res) => {
+  try {
+    const { itens } = req.body;
+    if (!itens || !Array.isArray(itens)) {
+      return res.status(400).json({ sucesso: false, erro: 'Array de itens obrigatório.' });
+    }
+    const analise = await db.otimizarListaCompras(null, itens);
+    res.json({ sucesso: true, analise });
   } catch (error) {
     res.status(500).json({ sucesso: false, erro: error.message });
   }
