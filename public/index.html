@@ -18,7 +18,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Economia Atibaia" />
-  <link rel="stylesheet" href="style.css?v=2.2" />
+  <link rel="stylesheet" href="style.css?v=2.5" />
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans pb-20 md:pb-6">
 
@@ -341,9 +341,13 @@
       
       <!-- Cards de Métricas Gerais -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <span class="text-xs text-slate-500 font-medium">Economia Total</span>
+        <div onclick="abrirModalExtratoEconomia()" class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-400 hover:shadow-md transition cursor-pointer active:scale-98 group" title="Clique para ver o Extrato Detalhado de Economia">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-500 font-medium">Economia Total</span>
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-emerald-500 group-hover:scale-110 transition"></i>
+          </div>
           <div id="stat-economia" class="text-xl font-black text-emerald-600 mt-1">R$ 0,00</div>
+          <p class="text-[10px] text-emerald-600 font-semibold mt-0.5 flex items-center gap-1">Ver extrato item a item &rarr;</p>
         </div>
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <span class="text-xs text-slate-500 font-medium">Total de Compras</span>
@@ -529,6 +533,15 @@
         </button>
       </div>
       <div class="p-6 overflow-y-auto flex-1 space-y-4">
+        <!-- Banner de Economia da Compra -->
+        <div id="modal-compra-economia-banner" class="hidden p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center justify-between font-medium">
+          <div class="flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+            <span id="modal-compra-economia-texto">Você economizou nesta compra!</span>
+          </div>
+          <span id="modal-compra-economia-badge" class="bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold text-xs">--</span>
+        </div>
+
         <div class="overflow-x-auto">
           <table class="w-full text-left text-sm">
             <thead class="bg-slate-50 text-slate-500 text-xs font-semibold uppercase border-b border-slate-200">
@@ -547,6 +560,48 @@
         <span id="modal-compra-total" class="font-bold text-slate-900 text-base">Total: R$ 0,00</span>
         <button onclick="fecharModalDetalhes()" class="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl text-sm transition">
           Fechar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Extrato Detalhado de Economia -->
+  <div id="extrato-economia-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 class="font-bold text-lg text-slate-900 flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-5 h-5 text-emerald-600"></i> Extrato Detalhado de Economia
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">Comparações reais item a item contra o preço médio praticado em Atibaia/SP</p>
+        </div>
+        <button onclick="fecharModalExtratoEconomia()" class="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 overflow-y-auto flex-1 space-y-4">
+        <!-- Banner Resumo de Economia -->
+        <div class="bg-emerald-600 text-white p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span class="text-xs text-emerald-100 font-medium">Economia Total Acumulada</span>
+            <div id="extrato-total-destaque" class="text-2xl font-black mt-0.5">R$ 0,00</div>
+            <p id="extrato-itens-sub" class="text-xs text-emerald-100 mt-1">Calculado em 0 itens abaixo da média</p>
+          </div>
+          <div class="bg-emerald-700/80 px-4 py-2.5 rounded-xl border border-emerald-500/60 text-xs max-w-xs">
+            💡 <strong>Como é calculado:</strong> Sempre que você paga menos que o preço médio do produto na cidade, a diferença multiplicada pela quantidade é somada aqui.
+          </div>
+        </div>
+
+        <!-- Tabela / Lista de Itens do Extrato -->
+        <div id="extrato-itens-container" class="space-y-3">
+          <!-- Renderizado dinamicamente via JS -->
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+        <button onclick="fecharModalExtratoEconomia()" class="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl text-sm transition">
+          Fechar Extrato
         </button>
       </div>
     </div>
@@ -651,6 +706,6 @@
     App de Economia em Supermercados &copy; 2026 — SQLite & SEFAZ NFC-e
   </footer>
 
-  <script src="app.js?v=2.2"></script>
+  <script src="app.js?v=2.5"></script>
 </body>
 </html>

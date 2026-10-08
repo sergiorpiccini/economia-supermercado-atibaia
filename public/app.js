@@ -783,12 +783,22 @@ async function abrirDetalhesCompra(compraId) {
     document.getElementById('modal-compra-sub').textContent = subTexto;
     document.getElementById('modal-compra-total').textContent = `Total: ${formatCurrency(compra.valor_total)}`;
 
+    // Banner de Economia da Compra
+    const banner = document.getElementById('modal-compra-economia-banner');
+    if (compra.economia_estimada > 0) {
+      banner.classList.remove('hidden');
+      document.getElementById('modal-compra-economia-texto').textContent = `Você economizou nesta compra comprando itens com preço abaixo da média de Atibaia!`;
+      document.getElementById('modal-compra-economia-badge').textContent = `Economia: ${formatCurrency(compra.economia_estimada)}`;
+    } else {
+      banner.classList.add('hidden');
+    }
+
     const tbody = document.getElementById('modal-itens-table');
     tbody.innerHTML = '';
 
     compra.itens.forEach(item => {
       const tr = document.createElement('tr');
-      tr.className = "border-b border-slate-100";
+      tr.className = "border-b border-slate-100 hover:bg-slate-50/70 transition";
       
       const packBadge = item.eh_pack
         ? `<div class="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-semibold inline-block mt-0.5">
@@ -796,18 +806,38 @@ async function abrirDetalhesCompra(compraId) {
            </div>`
         : '';
 
+      let economiaBadge = '';
+      if (item.comparacao) {
+        if (item.comparacao.statusEconomia === 'abaixo_media') {
+          economiaBadge = `
+            <div class="mt-1 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md inline-flex">
+              <i data-lucide="sparkles" class="w-3 h-3 text-emerald-600"></i>
+              <span>Economizou ${formatCurrency(item.comparacao.economiaItem)} (-${item.comparacao.pctEconomia}% vs média da cidade ${formatCurrency(item.comparacao.precoMedio)})</span>
+            </div>
+          `;
+        } else if (item.comparacao.statusEconomia === 'acima_media') {
+          economiaBadge = `
+            <div class="mt-1 text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md inline-block">
+              Média em Atibaia: ${formatCurrency(item.comparacao.precoMedio)}
+            </div>
+          `;
+        }
+      }
+
       tr.innerHTML = `
-        <td class="px-4 py-3 font-medium text-slate-800">
-          <div>${escapeHtml(item.nome_original)}</div>
+        <td class="px-4 py-3.5 font-medium text-slate-800">
+          <div class="font-bold text-slate-900">${escapeHtml(item.nome_original)}</div>
           ${packBadge}
+          ${economiaBadge}
         </td>
-        <td class="px-4 py-3 text-center text-slate-600 text-xs font-bold">
+        <td class="px-4 py-3.5 text-center text-slate-600 text-xs font-bold whitespace-nowrap">
           ${item.quantidade} ${item.unidade || 'UN'}
         </td>
-        <td class="px-4 py-3 text-right text-slate-600 font-mono text-xs">
+        <td class="px-4 py-3.5 text-right text-slate-600 font-mono text-xs whitespace-nowrap">
           ${formatCurrency(item.valor_unitario)}
+          ${item.eh_pack ? `<span class="block text-[10px] text-slate-400 font-sans">${formatCurrency(item.preco_unitario_fracionado)}/un</span>` : ''}
         </td>
-        <td class="px-4 py-3 text-right font-bold text-slate-900 font-mono text-xs">
+        <td class="px-4 py-3.5 text-right font-bold text-slate-900 font-mono text-xs whitespace-nowrap">
           ${formatCurrency(item.valor_total)}
         </td>
       `;
@@ -824,6 +854,82 @@ async function abrirDetalhesCompra(compraId) {
 
 function fecharModalDetalhes() {
   document.getElementById('detalhes-compra-modal').classList.add('hidden');
+}
+
+// Modal do Extrato Detalhado de Economia (Item por Item)
+async function abrirModalExtratoEconomia() {
+  const modal = document.getElementById('extrato-economia-modal');
+  const container = document.getElementById('extrato-itens-container');
+  modal.classList.remove('hidden');
+  lucide.createIcons();
+
+  container.innerHTML = `
+    <div class="text-center py-8 text-slate-400">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto mb-2"></div>
+      <p class="text-xs">Carregando extrato de economia...</p>
+    </div>
+  `;
+
+  try {
+    const response = await fetch('/api/economia/extrato', { headers: getAuthHeaders() });
+    const data = await response.json();
+
+    if (!data.sucesso || !data.extrato || data.extrato.length === 0) {
+      document.getElementById('extrato-total-destaque').textContent = 'R$ 0,00';
+      document.getElementById('extrato-itens-sub').textContent = 'Nenhuma compra abaixo da média ainda';
+      container.innerHTML = `
+        <div class="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+          <i data-lucide="receipt" class="w-10 h-10 text-slate-300 mx-auto"></i>
+          <h4 class="font-bold text-slate-700 text-sm">Nenhum item abaixo da média encontrado ainda</h4>
+          <p class="text-xs text-slate-500 max-w-sm mx-auto">Conforme você e outros usuários escanearem notas de mercados diferentes, o sistema identificará onde você pagou mais barato que a média e listará aqui!</p>
+        </div>
+      `;
+      lucide.createIcons();
+      return;
+    }
+
+    document.getElementById('extrato-total-destaque').textContent = formatCurrency(data.totalEconomia);
+    document.getElementById('extrato-itens-sub').textContent = `Calculado em ${data.totalItensComEconomia} ${data.totalItensComEconomia === 1 ? 'item que você pagou' : 'itens que você pagou'} abaixo da média`;
+
+    container.innerHTML = '';
+    data.extrato.forEach((item, idx) => {
+      const card = document.createElement('div');
+      card.className = "bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-emerald-300 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3";
+      
+      card.innerHTML = `
+        <div class="space-y-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs font-bold text-slate-900">${escapeHtml(item.produtoNome)}</span>
+            <span class="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-medium">${escapeHtml(item.mercadoNome)}</span>
+            <span class="text-[10px] text-slate-400">${item.dataEmissao || ''}</span>
+          </div>
+          <div class="text-xs text-slate-500 flex items-center gap-3 flex-wrap">
+            <span>Comprado: <strong>${item.quantidade} ${item.unidade}</strong></span>
+            <span>Preço pago: <strong class="text-slate-800">${formatCurrency(item.precoPago)}</strong></span>
+            <span>Média da cidade: <strong class="text-slate-600">${formatCurrency(item.precoMedio)}</strong></span>
+          </div>
+        </div>
+        <div class="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+          <span class="text-xs text-slate-400 sm:hidden">Você economizou:</span>
+          <div class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 px-3 py-1 rounded-xl text-xs font-black shadow-xs">
+            <i data-lucide="arrow-down-right" class="w-3.5 h-3.5 text-emerald-700"></i>
+            <span>+ ${formatCurrency(item.economiaTotalItem)}</span>
+            <span class="text-[10px] font-medium text-emerald-600">(-${item.pctEconomia}%)</span>
+          </div>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+    lucide.createIcons();
+
+  } catch (err) {
+    container.innerHTML = `<div class="p-4 bg-rose-50 text-rose-700 rounded-xl text-xs">Erro ao carregar extrato: ${err.message}</div>`;
+  }
+}
+
+function fecharModalExtratoEconomia() {
+  document.getElementById('extrato-economia-modal').classList.add('hidden');
 }
 
 // Excluir Compra
