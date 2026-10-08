@@ -482,6 +482,22 @@ app.get('/api/economia/extrato', async (req, res) => {
   }
 });
 
+// Endpoint para Importação em Lote de Scrapes de Supermercados
+const { processarLoteScrape } = require('./importerScrapes');
+app.post('/api/admin/importar-scrapes', async (req, res) => {
+  try {
+    const { itens } = req.body;
+    if (!itens || !Array.isArray(itens)) {
+      return res.status(400).json({ sucesso: false, erro: 'Formato inválido. Esperado array "itens".' });
+    }
+    const resultado = await processarLoteScrape(itens, db);
+    res.json({ sucesso: true, resultado });
+  } catch (error) {
+    console.error('[Admin] Erro ao importar scrapes:', error);
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
 // Endpoint de teste rápido / health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

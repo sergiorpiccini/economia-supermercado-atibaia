@@ -351,7 +351,39 @@ async function salvarCompra(dados, usuarioId = 1) {
   const valorTotalFinal = Number(valorTotalNota) || 0.0;
   const dataFinal = dataEmissao || new Date().toISOString();
 
-  // 2. Criar registro da Compra vinculada ao Usuário
+  // 2. Blindagem Anti-Duplicidade (Evita que a mesma nota seja escaneada e salva 2x)
+  if (urlConsultada) {
+    const compraPorUrl = await getQuery(`
+      SELECT c.id, c.data_emissao, u.nome as usuario_nome, COALESCE(e.nome_fantasia, e.nome) as mercado_nome
+      FROM compras c
+      LEFT JOIN usuarios u ON c.usuario_id = u.id
+      LEFT JOIN estabelecimentos e ON c.estabelecimento_id = e.id
+      WHERE c.url_nfce = ?
+    `, [urlConsultada]);
+
+    if (compraPorUrl) {
+      const autor = compraPorUrl.usuario_nome || 'um usuário';
+      const dataReg = compraPorUrl.data_emissao || 'data anterior';
+      throw new Error(`Esta nota fiscal (${compraPorUrl.mercado_nome} emitida em ${dataReg}) já foi cadastrada anteriormente no sistema por ${autor}!`);
+    }
+  }
+
+  if (estId && dataFinal && valorTotalFinal > 0) {
+    const compraPorAssinatura = await getQuery(`
+      SELECT c.id, c.data_emissao, u.nome as usuario_nome, COALESCE(e.nome_fantasia, e.nome) as mercado_nome
+      FROM compras c
+      LEFT JOIN usuarios u ON c.usuario_id = u.id
+      LEFT JOIN estabelecimentos e ON c.estabelecimento_id = e.id
+      WHERE c.estabelecimento_id = ? AND c.data_emissao = ? AND ABS(c.valor_total - ?) < 0.01
+    `, [estId, dataFinal, valorTotalFinal]);
+
+    if (compraPorAssinatura) {
+      const autor = compraPorAssinatura.usuario_nome || 'um usuário';
+      throw new Error(`Esta compra exata do ${compraPorAssinatura.mercado_nome} emitida em ${compraPorAssinatura.data_emissao} já foi cadastrada por ${autor}!`);
+    }
+  }
+
+  // 3. Criar registro da Compra vinculada ao Usuário
   const resCompra = await runQuery(
     `INSERT INTO compras (usuario_id, estabelecimento_id, url_nfce, data_emissao, valor_total, total_itens)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -1071,5 +1103,8 @@ module.exports = {
   listarGruposComparacao,
   adicionarProdutoAoGrupo,
   removerProdutoDoGrupo,
-  excluirGrupoComparacao
+  excluirGrupoComparacao,
+  runQuery,
+  getQuery,
+  allQuery
 };
