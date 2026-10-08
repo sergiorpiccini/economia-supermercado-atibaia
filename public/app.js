@@ -339,22 +339,31 @@ function alternarFiltroCompras(filtro) {
   carregarComprasSalvas();
 }
 
-// Navegação entre Telas Principais (Escanear / Minhas Compras / Preços & Economia)
+// Navegação entre Telas Principais (Escanear / Otimizador Lista / Minhas Compras / Preços)
 function navigateView(view) {
   currentView = view;
-  ['scanner', 'compras', 'historico'].forEach(v => {
-    document.getElementById(`view-${v}`).classList.add('hidden');
+  ['scanner', 'lista', 'compras', 'historico'].forEach(v => {
+    const el = document.getElementById(`view-${v}`);
+    if (el) el.classList.add('hidden');
     const tab = document.getElementById(`nav-${v}`);
-    tab.classList.remove('font-bold', 'text-emerald-600', 'border-emerald-600');
-    tab.classList.add('font-medium', 'text-slate-500', 'border-transparent');
+    if (tab) {
+      tab.classList.remove('font-bold', 'text-emerald-600', 'border-emerald-600');
+      tab.classList.add('font-medium', 'text-slate-500', 'border-transparent');
+    }
   });
 
-  document.getElementById(`view-${view}`).classList.remove('hidden');
-  const activeTab = document.getElementById(`nav-${view}`);
-  activeTab.classList.add('font-bold', 'text-emerald-600', 'border-emerald-600');
-  activeTab.classList.remove('font-medium', 'text-slate-500', 'border-transparent');
+  const activeViewEl = document.getElementById(`view-${view}`);
+  if (activeViewEl) activeViewEl.classList.remove('hidden');
 
-  if (view === 'compras') {
+  const activeTab = document.getElementById(`nav-${view}`);
+  if (activeTab) {
+    activeTab.classList.add('font-bold', 'text-emerald-600', 'border-emerald-600');
+    activeTab.classList.remove('font-medium', 'text-slate-500', 'border-transparent');
+  }
+
+  if (view === 'lista') {
+    carregarListasUsuario();
+  } else if (view === 'compras') {
     carregarComprasSalvas();
   } else if (view === 'historico') {
     carregarMetricas();
@@ -1717,4 +1726,551 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text || '';
   return div.innerHTML;
+}
+
+// ========================================================
+// 📋 LISTA DE COMPRAS INTELIGENTE & OTIMIZADOR DE PREÇOS
+// ========================================================
+
+let listasUsuario = [];
+let listaAtivaId = null;
+let listaAtivaDados = null;
+let produtoSelecionadoParaAdicao = null;
+let abaOtimizadorAtual = 'monomercado';
+let timeoutBuscaLista = null;
+let analiseOtimizacaoAtual = null;
+
+// Carregar listas do usuário
+async function carregarListasUsuario() {
+  try {
+    const res = await fetch('/api/listas', { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!data.sucesso) return;
+
+    listasUsuario = data.listas || [];
+    const select = document.getElementById('select-listas-usuario');
+    if (!select) return;
+
+    if (listasUsuario.length === 0) {
+      select.innerHTML = `<option value="">Nenhuma lista criada</option>`;
+      return;
+    }
+
+    select.innerHTML = listasUsuario.map(l => `
+      <option value="${l.id}" ${l.id === listaAtivaId ? 'selected' : ''}>
+        ${escapeHtml(l.nome_lista)} (${l.total_itens} ${l.total_itens === 1 ? 'item' : 'itens'})
+      </option>
+    `).join('');
+
+    if (!listaAtivaId || !listasUsuario.some(l => l.id == listaAtivaId)) {
+      listaAtivaId = listasUsuario[0].id;
+      select.value = listaAtivaId;
+    }
+
+    await carregarDetalhesLista(listaAtivaId);
+  } catch (err) {
+    console.error('Erro ao carregar listas:', err);
+  }
+}
+
+// Selecionar lista ativa
+function selecionarListaAtiva(id) {
+  listaAtivaId = parseInt(id);
+  carregarDetalhesLista(listaAtivaId);
+}
+
+// Abrir e fechar modal de nova lista
+function abrirModalNovaLista() {
+  const modal = document.getElementById('nova-lista-modal');
+  const input = document.getElementById('nova-lista-nome-input');
+  if (modal) modal.classList.remove('hidden');
+  if (input) {
+    input.value = '';
+    setTimeout(() => input.focus(), 100);
+  }
+  lucide.createIcons();
+}
+
+function fecharModalNovaLista() {
+  const modal = document.getElementById('nova-lista-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+// Salvar nova lista
+async function salvarNovaLista() {
+  const input = document.getElementById('nova-lista-nome-input');
+  const nome = (input ? input.value : '').trim();
+  if (!nome) {
+    alert('Informe o nome da nova lista.');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/listas', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ nome })
+    });
+    const data = await res.json();
+    if (data.sucesso) {
+      fecharModalNovaLista();
+      listaAtivaId = data.lista.id;
+      await carregarListasUsuario();
+    } else {
+      alert('Erro ao criar lista: ' + data.erro);
+    }
+  } catch (err) {
+    alert('Erro de conexão ao criar lista.');
+  }
+}
+
+// Excluir lista atual
+async function excluirListaAtual() {
+  if (!listaAtivaId) return;
+  const listaObj = listasUsuario.find(l => l.id == listaAtivaId);
+  const nome = listaObj ? listaObj.nome_lista : 'esta lista';
+  if (!confirm(`Tem certeza que deseja excluir a lista "${nome}"?`)) return;
+
+  try {
+    const res = await fetch(`/api/listas/${listaAtivaId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    const data = await res.json();
+    if (data.sucesso) {
+      listaAtivaId = null;
+      await carregarListasUsuario();
+    }
+  } catch (err) {
+    alert('Erro ao excluir lista.');
+  }
+}
+
+// Carregar detalhes dos itens da lista
+async function carregarDetalhesLista(listaId) {
+  if (!listaId) return;
+  const container = document.getElementById('lista-itens-container');
+  const totalBadge = document.getElementById('lista-qtd-total');
+  const progressoBadge = document.getElementById('lista-progresso-badge');
+
+  if (container) {
+    container.innerHTML = `
+      <div class="p-8 text-center text-slate-400">
+        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto mb-2"></div>
+        <p class="text-xs">Carregando itens da lista...</p>
+      </div>
+    `;
+  }
+
+  try {
+    const res = await fetch(`/api/listas/${listaId}`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!data.sucesso) return;
+
+    listaAtivaDados = data.lista;
+    const itens = listaAtivaDados.itens || [];
+
+    if (totalBadge) totalBadge.textContent = itens.length;
+    const comprados = itens.filter(i => i.comprado == 1).length;
+    if (progressoBadge) {
+      progressoBadge.textContent = `${comprados} de ${itens.length} comprados`;
+      if (comprados === itens.length && itens.length > 0) {
+        progressoBadge.className = "text-xs font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md";
+      } else {
+        progressoBadge.className = "text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md";
+      }
+    }
+
+    if (itens.length === 0) {
+      container.innerHTML = `
+        <div class="p-8 text-center text-slate-400 space-y-2">
+          <i data-lucide="shopping-basket" class="w-10 h-10 mx-auto text-slate-300"></i>
+          <p class="text-sm font-semibold text-slate-600">Sua lista está vazia</p>
+          <p class="text-xs text-slate-400 max-w-xs mx-auto">Use a barra acima para buscar produtos em Atibaia e adicionar à sua lista.</p>
+        </div>
+      `;
+      lucide.createIcons();
+      document.getElementById('box-otimizador-cesta')?.classList.add('hidden');
+      return;
+    }
+
+    document.getElementById('box-otimizador-cesta')?.classList.remove('hidden');
+
+    container.innerHTML = itens.map(item => {
+      const ehComprado = item.comprado == 1;
+      const refMedio = item.preco_medio_cidade ? `Média Atibaia: R$ ${Number(item.preco_medio_cidade).toFixed(2).replace('.', ',')}` : 'Preço sob consulta';
+      const refMenor = item.menor_preco_cidade ? ` • Menor: R$ ${Number(item.menor_preco_cidade).toFixed(2).replace('.', ',')}` : '';
+
+      return `
+        <div class="p-3 sm:p-4 flex items-center justify-between gap-3 hover:bg-slate-50/80 transition ${ehComprado ? 'opacity-60 bg-slate-50/50' : ''}">
+          <div class="flex items-center gap-3 flex-1 min-w-0">
+            <input type="checkbox" ${ehComprado ? 'checked' : ''} onchange="alternarCompradoItemLista(${item.item_id}, ${ehComprado})" class="w-5 h-5 rounded-lg text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer" />
+            <div class="min-w-0 flex-1">
+              <p class="font-bold text-slate-900 text-sm truncate ${ehComprado ? 'line-through text-slate-500' : ''}">
+                ${escapeHtml(item.nome_padrao)}
+              </p>
+              <p class="text-xs text-slate-500 truncate">
+                ${refMedio}${refMenor}
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <!-- Controle de Quantidade -->
+            <div class="flex items-center border border-slate-200 rounded-lg bg-white shadow-2xs overflow-hidden">
+              <button onclick="alterarQtdItemLista(${item.item_id}, ${Math.max(0.1, item.quantidade - 1)})" class="px-2 py-1 text-slate-500 hover:bg-slate-100 text-xs font-bold transition">-</button>
+              <span class="px-2 text-xs font-bold text-slate-800 min-w-[28px] text-center">${item.quantidade} <span class="text-[10px] font-normal text-slate-500">${escapeHtml(item.unidade || 'UN')}</span></span>
+              <button onclick="alterarQtdItemLista(${item.item_id}, ${item.quantidade + 1})" class="px-2 py-1 text-slate-500 hover:bg-slate-100 text-xs font-bold transition">+</button>
+            </div>
+
+            <button onclick="removerItemLista(${item.item_id})" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition" title="Remover item">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    lucide.createIcons();
+
+    // Dispara a otimização de preços
+    await carregarOtimizacaoLista(listaId);
+  } catch (err) {
+    console.error('Erro ao carregar detalhes da lista:', err);
+  }
+}
+
+// Busca autocomplete de produtos para adicionar na lista
+function buscarProdutosParaLista(termo) {
+  clearTimeout(timeoutBuscaLista);
+  const dropdown = document.getElementById('dropdown-busca-lista');
+  const q = (termo || '').trim();
+
+  if (q.length < 2) {
+    dropdown.classList.add('hidden');
+    dropdown.innerHTML = '';
+    return;
+  }
+
+  timeoutBuscaLista = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/produtos?busca=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!data.sucesso || !data.produtos || data.produtos.length === 0) {
+        dropdown.innerHTML = `
+          <div class="p-3 text-center text-xs text-slate-500">
+            Nenhum produto encontrado com "${escapeHtml(q)}".
+          </div>
+        `;
+        dropdown.classList.remove('hidden');
+        return;
+      }
+
+      dropdown.innerHTML = data.produtos.slice(0, 10).map(p => {
+        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}` : '';
+        const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
+        const precosTexto = [menor, medio].filter(Boolean).join(' • ');
+
+        return `
+          <div onclick='selecionarProdutoParaLista(${JSON.stringify(p).replace(/'/g, "&apos;")})' class="p-3 hover:bg-emerald-50/60 cursor-pointer transition flex items-center justify-between gap-2">
+            <div class="min-w-0 flex-1">
+              <p class="font-bold text-slate-900 text-xs truncate">${escapeHtml(p.nome_padrao)}</p>
+              <p class="text-[11px] text-slate-500 truncate">${escapeHtml(precosTexto || 'Preço nos mercados de Atibaia')}</p>
+            </div>
+            <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md shrink-0">
+              ${escapeHtml(p.unidade || 'UN')}
+            </span>
+          </div>
+        `;
+      }).join('');
+
+      dropdown.classList.remove('hidden');
+    } catch (err) {
+      console.error('Erro na busca de produtos:', err);
+    }
+  }, 250);
+}
+
+// Selecionar produto no dropdown
+function selecionarProdutoParaLista(p) {
+  produtoSelecionadoParaAdicao = p;
+  document.getElementById('dropdown-busca-lista')?.classList.add('hidden');
+  const box = document.getElementById('box-produto-selecionado-lista');
+  const nomeEl = document.getElementById('sel-produto-nome');
+  const refEl = document.getElementById('sel-produto-ref');
+  const qtdInput = document.getElementById('input-qtd-adicao');
+
+  if (nomeEl) nomeEl.textContent = p.nome_padrao;
+  if (refEl) {
+    const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}` : '';
+    const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
+    refEl.textContent = [menor, medio].filter(Boolean).join(' | ') || 'Preço registrado em Atibaia';
+  }
+  if (qtdInput) qtdInput.value = 1;
+  if (box) box.classList.remove('hidden');
+}
+
+// Ajustar quantidade
+function ajustarQtdAdicao(delta) {
+  const input = document.getElementById('input-qtd-adicao');
+  if (!input) return;
+  let val = parseFloat(input.value) || 1;
+  val = Math.max(0.1, Number((val + delta).toFixed(2)));
+  input.value = val;
+}
+
+// Confirmar adição de item
+async function confirmarAdicaoItemLista() {
+  if (!listaAtivaId || !produtoSelecionadoParaAdicao) return;
+  const inputQtd = document.getElementById('input-qtd-adicao');
+  const qtd = parseFloat(inputQtd ? inputQtd.value : 1) || 1;
+
+  try {
+    const res = await fetch(`/api/listas/${listaAtivaId}/itens`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        produto_id: produtoSelecionadoParaAdicao.id,
+        quantidade: qtd
+      })
+    });
+    const data = await res.json();
+    if (data.sucesso) {
+      produtoSelecionadoParaAdicao = null;
+      document.getElementById('box-produto-selecionado-lista')?.classList.add('hidden');
+      const inputBusca = document.getElementById('input-busca-lista');
+      if (inputBusca) inputBusca.value = '';
+      await carregarDetalhesLista(listaAtivaId);
+    } else {
+      alert('Erro ao adicionar produto: ' + data.erro);
+    }
+  } catch (err) {
+    alert('Erro de conexão ao adicionar produto.');
+  }
+}
+
+// Alternar status comprado
+async function alternarCompradoItemLista(itemId, compradoAtual) {
+  try {
+    await fetch(`/api/listas/itens/${itemId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ comprado: !compradoAtual })
+    });
+    await carregarDetalhesLista(listaAtivaId);
+  } catch (err) {
+    console.error('Erro ao atualizar item:', err);
+  }
+}
+
+// Alterar quantidade de um item já na lista
+async function alterarQtdItemLista(itemId, novaQtd) {
+  try {
+    await fetch(`/api/listas/itens/${itemId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ quantidade: novaQtd })
+    });
+    await carregarDetalhesLista(listaAtivaId);
+  } catch (err) {
+    console.error('Erro ao alterar quantidade:', err);
+  }
+}
+
+// Remover item da lista
+async function removerItemLista(itemId) {
+  try {
+    await fetch(`/api/listas/itens/${itemId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    await carregarDetalhesLista(listaAtivaId);
+  } catch (err) {
+    console.error('Erro ao remover item:', err);
+  }
+}
+
+// OTIMIZADOR DE PREÇOS EM TEMPO REAL
+async function carregarOtimizacaoLista(listaId) {
+  if (!listaId) return;
+  try {
+    const res = await fetch(`/api/listas/${listaId}/otimizacao`, { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!data.sucesso) return;
+
+    analiseOtimizacaoAtual = data.analise;
+    renderizarOtimizacao(analiseOtimizacaoAtual);
+  } catch (err) {
+    console.error('Erro ao carregar otimização de preços:', err);
+  }
+}
+
+function alternarAbaOtimizador(aba) {
+  abaOtimizadorAtual = aba;
+  ['monomercado', 'dividido', 'matriz'].forEach(a => {
+    const btn = document.getElementById(`tab-otim-${a}`);
+    const cont = document.getElementById(`otim-conteudo-${a}`);
+    if (a === aba) {
+      if (btn) btn.className = "px-3 py-1.5 rounded-lg bg-white text-emerald-700 shadow-xs font-bold transition";
+      if (cont) cont.classList.remove('hidden');
+    } else {
+      if (btn) btn.className = "px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition";
+      if (cont) cont.classList.add('hidden');
+    }
+  });
+  lucide.createIcons();
+}
+
+// Renderiza todas as visões do otimizador
+function renderizarOtimizacao(analise) {
+  if (!analise || analise.totalItens === 0) return;
+
+  // 1. Cenário Monomercado (Ranking)
+  const rankingContainer = document.getElementById('ranking-mercados-container');
+  if (rankingContainer) {
+    if (!analise.rankingMercados || analise.rankingMercados.length === 0) {
+      rankingContainer.innerHTML = `<div class="p-6 text-center text-xs text-slate-500 col-span-2">Nenhum preço recente registrado para os itens desta lista.</div>`;
+    } else {
+      rankingContainer.innerHTML = analise.rankingMercados.map((m, idx) => {
+        const ehMelhor = idx === 0 && m.pctDisponibilidade >= 50;
+        const selo = idx === 0 ? '🥇 Menor Preço' : (idx === 1 ? '🥈 2º Lugar' : (idx === 2 ? '🥉 3º Lugar' : ''));
+        const corCard = ehMelhor ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20' : 'border-slate-200 bg-white';
+        const corTotal = ehMelhor ? 'text-emerald-700' : 'text-slate-900';
+
+        return `
+          <div class="p-4 rounded-2xl border ${corCard} shadow-xs flex flex-col justify-between gap-3 transition">
+            <div class="space-y-1">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-bold text-slate-900 text-sm truncate">${escapeHtml(m.mercadoNome)}</span>
+                ${selo ? `<span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${ehMelhor ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700'}">${selo}</span>` : ''}
+              </div>
+              <p class="text-[11px] text-slate-500 truncate">${escapeHtml(m.endereco || 'Atibaia/SP')}</p>
+            </div>
+
+            <div class="pt-2 border-t border-slate-100/80 flex items-end justify-between">
+              <div>
+                <span class="text-[11px] text-slate-500 block">Total da Cesta</span>
+                <span class="text-xl font-black ${corTotal}">R$ ${m.totalCesta.toFixed(2).replace('.', ',')}</span>
+              </div>
+              <div class="text-right">
+                <span class="text-xs font-semibold ${m.pctDisponibilidade === 100 ? 'text-emerald-700' : 'text-amber-700'} block">
+                  ${m.itensEncontrados} de ${m.totalItensLista} itens
+                </span>
+                <span class="text-[10px] text-slate-400">(${m.pctDisponibilidade}% disponível)</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  // 2. Cenário Dividido Inteligente
+  const bannerDividido = document.getElementById('cenario-dividido-banner');
+  const gruposDividido = document.getElementById('cenario-dividido-grupos');
+
+  if (bannerDividido && gruposDividido) {
+    const div = analise.cenarioDividido;
+    if (!div || div.gruposMercado.length === 0) {
+      bannerDividido.innerHTML = `<p class="text-xs">Não foi possível calcular o cenário dividido.</p>`;
+      gruposDividido.innerHTML = '';
+    } else {
+      const economiaTexto = div.economiaVsMelhorUnico > 0
+        ? `🔥 <strong>Economia Extra: R$ ${div.economiaVsMelhorUnico.toFixed(2).replace('.', ',')} (${div.pctEconomiaExtra}%)</strong> comparado a comprar tudo em um só lugar!`
+        : `💡 Comprando pelo menor preço de cada item em Atibaia.`;
+
+      bannerDividido.innerHTML = `
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span class="text-xs text-emerald-100 font-semibold uppercase tracking-wider">Combinação de Menor Preço Absoluto</span>
+            <div class="text-2xl sm:text-3xl font-black mt-0.5">R$ ${div.totalOtimizado.toFixed(2).replace('.', ',')}</div>
+            <p class="text-xs text-emerald-100 mt-1">${economiaTexto}</p>
+          </div>
+          <div class="bg-emerald-800/80 px-4 py-2.5 rounded-xl border border-emerald-500/50 text-xs">
+            🛒 <strong>${div.totalMercadosEnvolvidos} ${div.totalMercadosEnvolvidos === 1 ? 'Supermercado' : 'Supermercados'}</strong> para visitar
+          </div>
+        </div>
+      `;
+
+      gruposDividido.innerHTML = div.gruposMercado.map(g => `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-black text-xs">🛒</span>
+              <div>
+                <h4 class="font-bold text-slate-900 text-xs sm:text-sm">${escapeHtml(g.mercadoNome)}</h4>
+                <p class="text-[10px] text-slate-500 truncate">${escapeHtml(g.endereco || 'Atibaia/SP')}</p>
+              </div>
+            </div>
+            <span class="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+              Subtotal: R$ ${g.subtotal.toFixed(2).replace('.', ',')}
+            </span>
+          </div>
+
+          <div class="divide-y divide-slate-100 p-2">
+            ${g.itens.map(it => `
+              <div class="p-2.5 flex items-center justify-between text-xs hover:bg-slate-50 transition">
+                <div class="min-w-0 flex-1">
+                  <p class="font-semibold text-slate-800 truncate">${escapeHtml(it.nome)}</p>
+                  <p class="text-[11px] text-slate-500">${it.quantidade} ${escapeHtml(it.unidade)} x R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}</p>
+                </div>
+                <span class="font-bold text-slate-900 ml-2">R$ ${it.subtotal.toFixed(2).replace('.', ',')}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+  }
+
+  // 3. Matriz Comparativa de Preços
+  const thead = document.getElementById('matriz-precos-thead');
+  const tbody = document.getElementById('matriz-precos-tbody');
+
+  if (thead && tbody && analise.comparativoItens) {
+    const mercadosIds = analise.rankingMercados.map(m => m.mercadoId);
+    const mercadosNomes = analise.rankingMercados.map(m => m.mercadoNome);
+
+    thead.innerHTML = `
+      <tr>
+        <th class="px-3 py-2.5">Produto</th>
+        <th class="px-3 py-2.5 text-center">Qtd</th>
+        ${mercadosNomes.map(nm => `<th class="px-3 py-2.5 text-right whitespace-nowrap">${escapeHtml(nm)}</th>`).join('')}
+        <th class="px-3 py-2.5 text-right">Média Atibaia</th>
+      </tr>
+    `;
+
+    tbody.innerHTML = analise.comparativoItens.map(it => {
+      const precoMedioFmt = it.precoMedio ? `R$ ${it.precoMedio.toFixed(2).replace('.', ',')}` : '--';
+
+      const colunasMercados = mercadosIds.map(mId => {
+        const dadoPreco = it.precosPorMercado[mId];
+        if (!dadoPreco) {
+          return `<td class="px-3 py-2 text-right text-slate-300 font-mono text-[11px]">--</td>`;
+        }
+        const ehMenor = dadoPreco.precoUnitario === it.menorPreco;
+        const cellClass = ehMenor ? 'bg-emerald-50 text-emerald-800 font-bold' : 'text-slate-700';
+
+        return `
+          <td class="px-3 py-2 text-right whitespace-nowrap ${cellClass}">
+            R$ ${dadoPreco.precoUnitario.toFixed(2).replace('.', ',')}
+            ${ehMenor ? ' ⭐' : ''}
+          </td>
+        `;
+      }).join('');
+
+      return `
+        <tr class="hover:bg-slate-50 transition">
+          <td class="px-3 py-2 font-medium text-slate-900 max-w-[160px] truncate" title="${escapeHtml(it.nome)}">
+            ${escapeHtml(it.nome)}
+          </td>
+          <td class="px-3 py-2 text-center text-slate-500">${it.quantidade}</td>
+          ${colunasMercados}
+          <td class="px-3 py-2 text-right font-semibold text-slate-500 whitespace-nowrap">${precoMedioFmt}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  lucide.createIcons();
 }

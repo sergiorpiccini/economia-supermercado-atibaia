@@ -126,15 +126,18 @@
   <div id="main-app-content" class="hidden flex-1 flex flex-col">
     <!-- Navegação Principal (Abas Superiores) -->
     <nav class="bg-white border-b border-slate-200 sticky top-[57px] z-30 shadow-xs">
-      <div class="max-w-4xl mx-auto px-4 flex">
-        <button onclick="navigateView('scanner')" id="nav-scanner" class="nav-tab flex-1 py-3 text-center font-bold text-sm text-emerald-600 border-b-2 border-emerald-600 flex items-center justify-center gap-2">
-          <i data-lucide="scan-line" class="w-4 h-4"></i> Escanear Nota
+      <div class="max-w-4xl mx-auto px-2 sm:px-4 flex overflow-x-auto no-scrollbar">
+        <button onclick="navigateView('scanner')" id="nav-scanner" class="nav-tab flex-1 min-w-[100px] py-3 text-center font-bold text-xs sm:text-sm text-emerald-600 border-b-2 border-emerald-600 flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="scan-line" class="w-4 h-4"></i> <span>Escanear</span>
         </button>
-        <button onclick="navigateView('compras')" id="nav-compras" class="nav-tab flex-1 py-3 text-center font-medium text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-2">
-          <i data-lucide="receipt" class="w-4 h-4"></i> Minhas Compras
+        <button onclick="navigateView('lista')" id="nav-lista" class="nav-tab flex-1 min-w-[120px] py-3 text-center font-medium text-xs sm:text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="list-checks" class="w-4 h-4"></i> <span>Otimizador Lista</span>
         </button>
-        <button onclick="navigateView('historico')" id="nav-historico" class="nav-tab flex-1 py-3 text-center font-medium text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-2">
-          <i data-lucide="trending-down" class="w-4 h-4"></i> Preços & Economia
+        <button onclick="navigateView('compras')" id="nav-compras" class="nav-tab flex-1 min-w-[110px] py-3 text-center font-medium text-xs sm:text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="receipt" class="w-4 h-4"></i> <span>Minhas Compras</span>
+        </button>
+        <button onclick="navigateView('historico')" id="nav-historico" class="nav-tab flex-1 min-w-[110px] py-3 text-center font-medium text-xs sm:text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="trending-down" class="w-4 h-4"></i> <span>Preços</span>
         </button>
       </div>
     </nav>
@@ -308,6 +311,155 @@
     </div>
 
 
+    <!-- ==================== TELA 4: OTIMIZADOR DE LISTA DE COMPRAS ==================== -->
+    <div id="view-lista" class="hidden space-y-6">
+
+      <!-- Header & Seletor de Lista -->
+      <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="space-y-1">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+              <i data-lucide="sparkles" class="w-3 h-3"></i> Inteligência de Preços
+            </span>
+            <span id="lista-progresso-badge" class="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+              0 itens
+            </span>
+          </div>
+          <div class="flex items-center gap-2 mt-1">
+            <select id="select-listas-usuario" onchange="selecionarListaAtiva(this.value)" class="font-black text-slate-900 text-lg sm:text-xl bg-transparent border-0 border-b border-dashed border-slate-300 focus:outline-none focus:border-emerald-500 cursor-pointer py-0.5">
+              <!-- Preenchido via JS -->
+            </select>
+          </div>
+          <p class="text-xs text-slate-500">Compare sua cesta nos mercados de Atibaia e descubra a melhor combinação</p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button onclick="abrirModalNovaLista()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 active:scale-95">
+            <i data-lucide="plus" class="w-4 h-4"></i> Nova Lista
+          </button>
+          <button onclick="excluirListaAtual()" class="p-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl transition" title="Excluir Lista">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Barra de Busca & Adicionar Item à Lista -->
+      <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+        <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-600"></i> Adicionar Produto à Lista
+        </h3>
+
+        <div class="relative">
+          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5"></i>
+          <input type="text" id="input-busca-lista" oninput="buscarProdutosParaLista(this.value)" placeholder="Digite o nome do produto (ex: arroz, café, leite, sabonete, queijo...)" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition" />
+          
+          <!-- Dropdown Autocomplete de Resultados -->
+          <div id="dropdown-busca-lista" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-64 overflow-y-auto divide-y divide-slate-100">
+            <!-- Renderizado via JS -->
+          </div>
+        </div>
+
+        <!-- Seletor de Quantidade do Produto Selecionado -->
+        <div id="box-produto-selecionado-lista" class="hidden bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="space-y-0.5">
+            <p id="sel-produto-nome" class="font-bold text-slate-900 text-sm">Nome do Produto</p>
+            <p id="sel-produto-ref" class="text-xs text-emerald-800">Menor preço atual: R$ -- | Média: R$ --</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex items-center border border-slate-300 rounded-xl bg-white overflow-hidden">
+              <button onclick="ajustarQtdAdicao(-1)" class="px-3 py-1.5 text-slate-600 hover:bg-slate-100 font-bold transition">-</button>
+              <input type="number" id="input-qtd-adicao" value="1" min="0.1" step="any" class="w-16 text-center text-sm font-bold border-0 focus:outline-none" />
+              <button onclick="ajustarQtdAdicao(1)" class="px-3 py-1.5 text-slate-600 hover:bg-slate-100 font-bold transition">+</button>
+            </div>
+            <button onclick="confirmarAdicaoItemLista()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition active:scale-95">
+              Adicionar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid Principal: Itens da Lista vs Otimizador -->
+      <div class="space-y-6">
+
+        <!-- Itens da Lista de Compras -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <i data-lucide="shopping-cart" class="w-4 h-4 text-emerald-600"></i>
+              <h3 class="font-bold text-sm text-slate-800">Itens na Lista (<span id="lista-qtd-total">0</span>)</h3>
+            </div>
+            <div class="text-xs text-slate-500 font-medium">
+              Marque o check ao pegar no carrinho
+            </div>
+          </div>
+
+          <div id="lista-itens-container" class="divide-y divide-slate-100 p-2">
+            <!-- Preenchido via JS -->
+          </div>
+        </div>
+
+        <!-- Otimizador de Cesta & Comparador de Mercados -->
+        <div id="box-otimizador-cesta" class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-4 p-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h3 class="font-black text-base text-slate-900 flex items-center gap-2">
+                <i data-lucide="calculator" class="w-5 h-5 text-emerald-600"></i> Radar de Economia da Lista
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">Calculado em tempo real com os preços registrados em Atibaia/SP</p>
+            </div>
+
+            <!-- Sub-abas do Otimizador -->
+            <div class="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600">
+              <button id="tab-otim-monomercado" onclick="alternarAbaOtimizador('monomercado')" class="px-3 py-1.5 rounded-lg bg-white text-emerald-700 shadow-xs font-bold transition">
+                Tudo em 1 Lugar
+              </button>
+              <button id="tab-otim-dividido" onclick="alternarAbaOtimizador('dividido')" class="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition">
+                ⚡ Divisão Econômica
+              </button>
+              <button id="tab-otim-matriz" onclick="alternarAbaOtimizador('matriz')" class="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition">
+                📊 Matriz de Preços
+              </button>
+            </div>
+          </div>
+
+          <!-- Conteúdo 1: Cenário Monomercado -->
+          <div id="otim-conteudo-monomercado" class="space-y-4">
+            <div id="ranking-mercados-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <!-- Renderizado via JS -->
+            </div>
+          </div>
+
+          <!-- Conteúdo 2: Cenário Dividido Inteligente -->
+          <div id="otim-conteudo-dividido" class="hidden space-y-4">
+            <div id="cenario-dividido-banner" class="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-5 rounded-2xl shadow-sm">
+              <!-- Preenchido via JS -->
+            </div>
+            <div id="cenario-dividido-grupos" class="space-y-4">
+              <!-- Preenchido via JS -->
+            </div>
+          </div>
+
+          <!-- Conteúdo 3: Matriz de Preços Item a Item -->
+          <div id="otim-conteudo-matriz" class="hidden space-y-4">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead id="matriz-precos-thead" class="bg-slate-50 text-slate-500 font-semibold uppercase border-b border-slate-200">
+                  <!-- Colunas inseridas via JS -->
+                </thead>
+                <tbody id="matriz-precos-tbody" class="divide-y divide-slate-100">
+                  <!-- Linhas inseridas via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
     <!-- ==================== TELA 2: MINHAS COMPRAS SALVAS ==================== -->
     <div id="view-compras" class="hidden space-y-6">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -451,6 +603,37 @@
         <span id="catalogo-stats-rodape">Carregando produtos...</span>
         <button onclick="fecharModalCatalogo()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl transition">
           Fechar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Criar Nova Lista de Compras -->
+  <div id="nova-lista-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-emerald-600"></i> Nova Lista de Compras
+        </h3>
+        <button onclick="fecharModalNovaLista()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nome da Lista</label>
+          <input type="text" id="nova-lista-nome-input" placeholder="Ex: Compras do Mês, Churrasco de Domingo, Feira..." class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" onkeydown="if(event.key==='Enter') salvarNovaLista()" />
+        </div>
+        <p class="text-[11px] text-slate-500 bg-emerald-50 p-2.5 rounded-lg border border-emerald-100">
+          💡 <strong>Dica:</strong> Você pode ter múltiplas listas para simular e comparar preços antes de sair às compras.
+        </p>
+      </div>
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+        <button onclick="fecharModalNovaLista()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
+          Cancelar
+        </button>
+        <button onclick="salvarNovaLista()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm">
+          Criar Lista
         </button>
       </div>
     </div>
@@ -706,6 +889,6 @@
     App de Economia em Supermercados &copy; 2026 — SQLite & SEFAZ NFC-e
   </footer>
 
-  <script src="app.js?v=2.5"></script>
+  <script src="app.js?v=2.6"></script>
 </body>
 </html>
