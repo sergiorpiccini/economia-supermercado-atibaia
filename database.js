@@ -1,9 +1,26 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const crypto = require('crypto');
+const { createClient } = require('@libsql/client');
 
-const dbPath = path.join(__dirname, 'economia_supermercado.db');
-const db = new sqlite3.Database(dbPath);
+// Verifica se existem credenciais da nuvem (Turso / LibSQL)
+const tursoUrl = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL || '';
+const tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '';
+
+let libsql = null;
+let db = null;
+
+if (tursoUrl && (tursoUrl.startsWith('libsql://') || tursoUrl.startsWith('https://') || tursoUrl.startsWith('http://'))) {
+  console.log('[Database] Conectando ao Banco de Dados SQLite na Nuvem Permanente (Turso/LibSQL)...');
+  libsql = createClient({
+    url: tursoUrl,
+    authToken: tursoAuthToken
+  });
+} else {
+  console.log('[Database] Usando Banco de Dados SQLite Local...');
+  const dbPath = path.join(__dirname, 'economia_supermercado.db');
+  db = new sqlite3.Database(dbPath);
+}
 
 function hashPassword(senha) {
   const salt = 'atibaia_mercado_salt_2026';
@@ -11,152 +28,137 @@ function hashPassword(senha) {
 }
 
 // Inicialização e criação das tabelas
-function initDb() {
-  db.serialize(() => {
-    // Tabela Usuários (Para colaboração e identificação das notas)
-    db.run(`
-      CREATE TABLE IF NOT EXISTS usuarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        senha_hash TEXT NOT NULL,
-        bairro TEXT,
-        cidade TEXT DEFAULT 'Atibaia - SP',
-        avatar TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+async function initDb() {
+  const schemaSqls = [
+    `CREATE TABLE IF NOT EXISTS usuarios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      senha_hash TEXT NOT NULL,
+      bairro TEXT,
+      cidade TEXT DEFAULT 'Atibaia - SP',
+      avatar TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS estabelecimentos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      nome_fantasia TEXT,
+      cnpj TEXT UNIQUE,
+      endereco TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS compras (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      usuario_id INTEGER,
+      estabelecimento_id INTEGER,
+      url_nfce TEXT,
+      chave_acesso TEXT,
+      data_emissao TEXT,
+      valor_total REAL NOT NULL DEFAULT 0.0,
+      total_itens INTEGER NOT NULL DEFAULT 0,
+      economia_estimada REAL DEFAULT 0.0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+      FOREIGN KEY (estabelecimento_id) REFERENCES estabelecimentos(id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS produtos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome_padrao TEXT NOT NULL,
+      codigo TEXT,
+      unidade TEXT DEFAULT 'UN',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS itens_compra (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      compra_id INTEGER NOT NULL,
+      produto_id INTEGER NOT NULL,
+      nome_original TEXT NOT NULL,
+      quantidade REAL NOT NULL DEFAULT 1.0,
+      unidade TEXT DEFAULT 'UN',
+      valor_unitario REAL NOT NULL DEFAULT 0.0,
+      valor_total REAL NOT NULL DEFAULT 0.0,
+      eh_pack INTEGER DEFAULT 0,
+      pack_qtd INTEGER DEFAULT 1,
+      preco_unitario_fracionado REAL,
+      preco_medida_padrao TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (compra_id) REFERENCES compras(id) ON DELETE CASCADE,
+      FOREIGN KEY (produto_id) REFERENCES produtos(id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS historico_precos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      produto_id INTEGER NOT NULL,
+      estabelecimento_id INTEGER NOT NULL,
+      compra_id INTEGER NOT NULL,
+      valor_unitario REAL NOT NULL DEFAULT 0.0,
+      preco_fracionado REAL,
+      data_registro TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (produto_id) REFERENCES produtos(id),
+      FOREIGN KEY (estabelecimento_id) REFERENCES estabelecimentos(id),
+      FOREIGN KEY (compra_id) REFERENCES compras(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE IF NOT EXISTS grupos_comparacao (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome_grupo TEXT NOT NULL,
+      descricao TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS itens_grupo_comparacao (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      grupo_id INTEGER NOT NULL,
+      produto_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(grupo_id, produto_id),
+      FOREIGN KEY (grupo_id) REFERENCES grupos_comparacao(id) ON DELETE CASCADE,
+      FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE CASCADE
+    )`
+  ];
 
-    // Tabela Estabelecimentos
-    db.run(`
-      CREATE TABLE IF NOT EXISTS estabelecimentos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        nome_fantasia TEXT,
-        cnpj TEXT UNIQUE,
-        endereco TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+  const migracoes = [
+    'ALTER TABLE compras ADD COLUMN usuario_id INTEGER',
+    'ALTER TABLE estabelecimentos ADD COLUMN nome_fantasia TEXT',
+    'ALTER TABLE itens_compra ADD COLUMN eh_pack INTEGER DEFAULT 0',
+    'ALTER TABLE itens_compra ADD COLUMN pack_qtd INTEGER DEFAULT 1',
+    'ALTER TABLE itens_compra ADD COLUMN preco_unitario_fracionado REAL',
+    'ALTER TABLE itens_compra ADD COLUMN preco_medida_padrao TEXT',
+    'ALTER TABLE historico_precos ADD COLUMN preco_fracionado REAL'
+  ];
 
-    // Tabela Compras / Notas Fiscais
-    db.run(`
-      CREATE TABLE IF NOT EXISTS compras (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario_id INTEGER,
-        estabelecimento_id INTEGER,
-        url_nfce TEXT,
-        chave_acesso TEXT,
-        data_emissao TEXT,
-        valor_total REAL NOT NULL DEFAULT 0.0,
-        total_itens INTEGER NOT NULL DEFAULT 0,
-        economia_estimada REAL DEFAULT 0.0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
-        FOREIGN KEY (estabelecimento_id) REFERENCES estabelecimentos(id)
-      )
-    `);
+  for (const sql of schemaSqls) {
+    try {
+      await runQuery(sql);
+    } catch (e) {
+      console.warn('[DB Init] Aviso na tabela:', e.message);
+    }
+  }
 
-    // Tabela Produtos
-    db.run(`
-      CREATE TABLE IF NOT EXISTS produtos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome_padrao TEXT NOT NULL,
-        codigo TEXT,
-        unidade TEXT DEFAULT 'UN',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+  for (const sql of migracoes) {
+    try {
+      await runQuery(sql);
+    } catch (e) {
+      // Ignora se coluna já existir
+    }
+  }
 
-    // Tabela Itens da Compra
-    db.run(`
-      CREATE TABLE IF NOT EXISTS itens_compra (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        compra_id INTEGER NOT NULL,
-        produto_id INTEGER NOT NULL,
-        nome_original TEXT NOT NULL,
-        quantidade REAL NOT NULL DEFAULT 1.0,
-        unidade TEXT DEFAULT 'UN',
-        valor_unitario REAL NOT NULL DEFAULT 0.0,
-        valor_total REAL NOT NULL DEFAULT 0.0,
-        eh_pack INTEGER DEFAULT 0,
-        pack_qtd INTEGER DEFAULT 1,
-        preco_unitario_fracionado REAL,
-        preco_medida_padrao TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (compra_id) REFERENCES compras(id) ON DELETE CASCADE,
-        FOREIGN KEY (produto_id) REFERENCES produtos(id)
-      )
-    `);
-
-    // Tabela Histórico de Preços
-    db.run(`
-      CREATE TABLE IF NOT EXISTS historico_precos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        produto_id INTEGER NOT NULL,
-        estabelecimento_id INTEGER NOT NULL,
-        compra_id INTEGER NOT NULL,
-        valor_unitario REAL NOT NULL DEFAULT 0.0,
-        preco_fracionado REAL,
-        data_registro TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (produto_id) REFERENCES produtos(id),
-        FOREIGN KEY (estabelecimento_id) REFERENCES estabelecimentos(id),
-        FOREIGN KEY (compra_id) REFERENCES compras(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Tabela Grupos de Comparação Personalizados (Cestas de Equivalência de Marcas)
-    db.run(`
-      CREATE TABLE IF NOT EXISTS grupos_comparacao (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome_grupo TEXT NOT NULL,
-        descricao TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Tabela Itens do Grupo de Comparação
-    db.run(`
-      CREATE TABLE IF NOT EXISTS itens_grupo_comparacao (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        grupo_id INTEGER NOT NULL,
-        produto_id INTEGER NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(grupo_id, produto_id),
-        FOREIGN KEY (grupo_id) REFERENCES grupos_comparacao(id) ON DELETE CASCADE,
-        FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Migrações dinâmicas para adicionar colunas caso o banco já existisse
-    const migracoes = [
-      'ALTER TABLE compras ADD COLUMN usuario_id INTEGER',
-      'ALTER TABLE estabelecimentos ADD COLUMN nome_fantasia TEXT',
-      'ALTER TABLE itens_compra ADD COLUMN eh_pack INTEGER DEFAULT 0',
-      'ALTER TABLE itens_compra ADD COLUMN pack_qtd INTEGER DEFAULT 1',
-      'ALTER TABLE itens_compra ADD COLUMN preco_unitario_fracionado REAL',
-      'ALTER TABLE itens_compra ADD COLUMN preco_medida_padrao TEXT',
-      'ALTER TABLE historico_precos ADD COLUMN preco_fracionado REAL'
-    ];
-
-    migracoes.forEach(sql => {
-      db.run(sql, () => {}); // Ignora se a coluna já existir
-    });
-
-    // Garante que existe ao menos 1 usuário padrão (Administrador / Criador) e vincula compras anteriores
-    const hashPadrao = hashPassword('123456');
-    db.run(`
+  // Garante que existe ao menos 1 usuário padrão (Administrador / Criador)
+  const hashPadrao = hashPassword('123456');
+  try {
+    await runQuery(`
       INSERT OR IGNORE INTO usuarios (id, nome, email, senha_hash, bairro, cidade)
       VALUES (1, 'Você (Criador)', 'admin@atibaia.com', ?, 'Lucas / Centro', 'Atibaia - SP')
-    `, [hashPadrao], () => {
-      db.run('UPDATE compras SET usuario_id = 1 WHERE usuario_id IS NULL');
-    });
-  });
+    `, [hashPadrao]);
+    await runQuery('UPDATE compras SET usuario_id = 1 WHERE usuario_id IS NULL');
+  } catch (e) {}
 }
 
-// Executa queries genéricas com Promise
-function runQuery(sql, params = []) {
+// Executa queries genéricas com suporte híbrido (Nuvem LibSQL / Local SQLite)
+async function runQuery(sql, params = []) {
+  if (libsql) {
+    const res = await libsql.execute({ sql, args: params });
+    return { id: Number(res.lastInsertRowid), changes: res.rowsAffected };
+  }
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
       if (err) return reject(err);
@@ -165,20 +167,31 @@ function runQuery(sql, params = []) {
   });
 }
 
-function getQuery(sql, params = []) {
+async function getQuery(sql, params = []) {
+  if (libsql) {
+    const res = await libsql.execute({ sql, args: params });
+    if (res.rows && res.rows.length > 0) {
+      return res.rows[0];
+    }
+    return null;
+  }
   return new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => {
       if (err) return reject(err);
-      resolve(row);
+      resolve(row || null);
     });
   });
 }
 
-function allQuery(sql, params = []) {
+async function allQuery(sql, params = []) {
+  if (libsql) {
+    const res = await libsql.execute({ sql, args: params });
+    return res.rows || [];
+  }
   return new Promise((resolve, reject) => {
     db.all(sql, params, (err, rows) => {
       if (err) return reject(err);
-      resolve(rows);
+      resolve(rows || []);
     });
   });
 }
