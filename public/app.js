@@ -686,22 +686,17 @@ async function carregarComprasSalvas() {
   `;
 
   try {
-    const endpoint = filtroComprasAtual === 'minhas' ? '/api/compras' : '/api/compras?todas=true';
-    const response = await fetch(endpoint, { headers: getAuthHeaders() });
+    const response = await fetch('/api/compras', { headers: getAuthHeaders() });
     const data = await response.json();
 
     if (!data.compras || data.compras.length === 0) {
-      const msgVazia = filtroComprasAtual === 'minhas'
-        ? 'Você ainda não escaneou nenhuma compra na sua conta.'
-        : 'Nenhuma compra cadastrada por ninguém ainda.';
-
       container.innerHTML = `
         <div class="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-3">
           <i data-lucide="receipt" class="w-12 h-12 text-slate-300 mx-auto"></i>
-          <h3 class="font-bold text-slate-700">Nenhuma compra encontrada</h3>
-          <p class="text-xs text-slate-500 max-w-sm mx-auto">${msgVazia}</p>
+          <h3 class="font-bold text-slate-700">Nenhuma compra cadastrada</h3>
+          <p class="text-xs text-slate-500 max-w-sm mx-auto">Você ainda não escaneou nenhuma nota fiscal na sua conta.</p>
           <button onclick="navigateView('scanner')" class="mt-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition">
-            Escanear Nota
+            Escanear Minha Primeira Nota
           </button>
         </div>
       `;
@@ -721,24 +716,17 @@ async function carregarComprasSalvas() {
         ? `<span class="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Economizou ${formatCurrency(compra.economia_estimada)}</span>`
         : '';
 
-      const autorBadge = compra.usuario_nome
-        ? `<span class="inline-flex items-center gap-1 text-[11px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
-             <i data-lucide="user" class="w-3 h-3 text-emerald-600"></i> Enviado por <strong>${escapeHtml(compra.usuario_nome)}</strong> ${compra.usuario_bairro ? `(${escapeHtml(compra.usuario_bairro)})` : ''}
-           </span>`
-        : '';
-
-      const botaoExcluir = (currentUser && compra.usuario_id === currentUser.id)
-        ? `<button onclick="excluirCompra(${compra.id})" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition" title="Excluir Minha Compra">
-             <i data-lucide="trash-2" class="w-4 h-4"></i>
-           </button>`
-        : '';
+      const botaoExcluir = `
+        <button onclick="excluirCompra(${compra.id})" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition" title="Excluir Minha Compra">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </button>
+      `;
 
       card.innerHTML = `
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
           <div>
             <div class="flex items-center gap-2 flex-wrap mb-1">
               <span class="text-[11px] font-semibold text-slate-400 uppercase">${compra.data_emissao || 'Data não informada'}</span>
-              ${autorBadge}
             </div>
             <h3 class="text-base font-bold text-slate-900">${escapeHtml(nomeExibicao)}</h3>
             ${enderecoExibicao}
@@ -976,20 +964,26 @@ async function carregarMetricas() {
     } else {
       metricas.topProdutos.forEach(prod => {
         const itemCard = document.createElement('div');
-        itemCard.className = "p-3.5 bg-slate-50 border border-slate-200 rounded-xl hover:bg-emerald-50/50 transition cursor-pointer";
+        itemCard.className = "p-3.5 bg-slate-50 border border-slate-200 rounded-xl hover:bg-emerald-50/50 transition cursor-pointer flex flex-col justify-between gap-2";
         itemCard.onclick = () => {
           document.getElementById('busca-produto-input').value = prod.nome_padrao;
           buscarHistoricoProduto(prod.id);
         };
         itemCard.innerHTML = `
-          <h4 class="font-bold text-xs text-slate-800 line-clamp-1">${escapeHtml(prod.nome_padrao)}</h4>
-          <div class="flex justify-between items-center mt-2 text-[11px] text-slate-500">
+          <div class="flex items-start justify-between gap-2">
+            <h4 class="font-bold text-xs text-slate-800 line-clamp-2 flex-1">${escapeHtml(prod.nome_padrao)}</h4>
+            <button onclick="event.stopPropagation(); adicionarProdutoRapidoNaLista(${prod.id}, '${escapeHtml(prod.nome_padrao).replace(/'/g, "\\'")}')" class="px-2 py-1 bg-emerald-100 hover:bg-emerald-600 hover:text-white text-emerald-800 rounded-lg transition shrink-0 flex items-center gap-1 font-bold text-[10px] shadow-2xs" title="Adicionar à Lista de Compras">
+              <i data-lucide="plus" class="w-3 h-3"></i> + Lista
+            </button>
+          </div>
+          <div class="flex justify-between items-center text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
             <span>Comprado ${prod.vezes_comprado}x</span>
             <span class="font-bold text-emerald-700">${formatCurrency(prod.menor_preco)}</span>
           </div>
         `;
         topContainer.appendChild(itemCard);
       });
+      lucide.createIcons();
     }
 
     // Carrega também as Cestas de Comparação Personalizadas
@@ -1086,11 +1080,14 @@ function renderizarCatalogo(produtos) {
           ${prod.codigo ? `<span class="text-[11px] text-slate-400 font-mono block mt-0.5">Cód: ${escapeHtml(prod.codigo)}</span>` : ''}
           ${menorMercadoTexto}
         </div>
-        <div class="flex items-center gap-1.5 self-end sm:self-auto">
-          <button onclick="abrirHistoricoDeProduto(${prod.id}, '${escapeHtml(prod.nome_padrao).replace(/'/g, "\\'")}')" class="px-3 py-1.5 bg-slate-100 hover:bg-emerald-100 hover:text-emerald-800 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1 transition" title="Ver Histórico de Preços">
+        <div class="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
+          <button onclick="adicionarProdutoRapidoNaLista(${prod.id}, '${escapeHtml(prod.nome_padrao).replace(/'/g, "\\'")}')" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-semibold rounded-lg flex items-center gap-1 transition" title="Adicionar à Lista de Compras">
+            <i data-lucide="shopping-cart" class="w-3.5 h-3.5 text-emerald-600"></i> + Lista
+          </button>
+          <button onclick="abrirHistoricoDeProduto(${prod.id}, '${escapeHtml(prod.nome_padrao).replace(/'/g, "\\'")}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-emerald-100 hover:text-emerald-800 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1 transition" title="Ver Histórico de Preços">
             <i data-lucide="trending-up" class="w-3.5 h-3.5"></i> Histórico
           </button>
-          <button onclick="abrirModalAdicionarProduto(${prod.id}, '${escapeHtml(prod.nome_padrao).replace(/'/g, "\\'")}')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1 transition shadow-xs" title="Adicionar à Cesta de Comparação">
+          <button onclick="abrirModalAdicionarProduto(${prod.id}, '${escapeHtml(prod.nome_padrao).replace(/'/g, "\\'")}')" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1 transition shadow-xs" title="Adicionar à Cesta de Comparação">
             <i data-lucide="layers" class="w-3.5 h-3.5"></i> + Cesta
           </button>
         </div>
@@ -2273,4 +2270,96 @@ function renderizarOtimizacao(analise) {
   }
 
   lucide.createIcons();
+}
+
+// ========================================================
+// ⚡ AÇÕES RÁPIDAS: ADICIONAR E GERAR LISTAS INTELIGENTES
+// ========================================================
+
+// Adiciona rapidamente um produto à lista de compras ativa
+async function adicionarProdutoRapidoNaLista(produtoId, nomeProduto = 'Produto') {
+  try {
+    if (!listaAtivaId) {
+      if (listasUsuario.length === 0) {
+        const resLista = await fetch('/api/listas', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ nome: 'Minha Lista de Compras' })
+        });
+        const dataLista = await resLista.json();
+        if (dataLista.sucesso) {
+          listaAtivaId = dataLista.lista.id;
+        }
+      } else {
+        listaAtivaId = listasUsuario[0].id;
+      }
+    }
+
+    if (!listaAtivaId) {
+      alert('Selecione ou crie uma lista de compras primeiro.');
+      return;
+    }
+
+    const res = await fetch(`/api/listas/${listaAtivaId}/itens`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        produto_id: produtoId,
+        quantidade: 1
+      })
+    });
+    const data = await res.json();
+    if (data.sucesso) {
+      mostrarNotificacaoToast(`🛒 "${nomeProduto}" adicionado à sua lista de compras!`);
+      if (currentView === 'lista') {
+        await carregarDetalhesLista(listaAtivaId);
+      }
+    } else {
+      alert('Erro ao adicionar produto: ' + data.erro);
+    }
+  } catch (err) {
+    console.error('Erro ao adicionar produto rápido:', err);
+  }
+}
+
+// Gera uma lista automática com os produtos mais comprados
+async function gerarListaComMaisComprados() {
+  try {
+    const nomePadrao = `Meus Itens Frequentes (${new Date().toLocaleDateString('pt-BR')})`;
+    const res = await fetch('/api/listas/gerar-frequentes', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ nome: nomePadrao })
+    });
+    const data = await res.json();
+    if (data.sucesso) {
+      listaAtivaId = data.lista.id;
+      navigateView('lista');
+      await carregarListasUsuario();
+      mostrarNotificacaoToast(`✨ Lista criada com ${data.lista.total_itens} itens frequentes!`);
+    } else {
+      alert('Erro ao gerar lista: ' + data.erro);
+    }
+  } catch (err) {
+    alert('Erro ao gerar lista com itens frequentes.');
+  }
+}
+
+// Toast de Notificação Rápida
+function mostrarNotificacaoToast(msg) {
+  let toast = document.getElementById('app-toast-notificacao');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'app-toast-notificacao';
+    toast.className = 'fixed bottom-6 right-6 z-50 bg-slate-900/95 text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-slate-700/80 backdrop-blur flex items-center gap-2 transform transition-all duration-300 translate-y-20 opacity-0 pointer-events-none';
+    document.body.appendChild(toast);
+  }
+
+  toast.innerHTML = `<i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400 shrink-0"></i> <span>${escapeHtml(msg)}</span>`;
+  lucide.createIcons();
+
+  toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+  setTimeout(() => {
+    toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+  }, 3200);
 }
