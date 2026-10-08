@@ -349,10 +349,10 @@ app.post('/api/compras', async (req, res) => {
   }
 });
 
-// Endpoint para Listar Compras (Filtra por usuário se logado, ou lista todas se especificado)
+// Endpoint para Listar Compras (Estritamente privadas do usuário autenticado)
 app.get('/api/compras', async (req, res) => {
   try {
-    const usuarioId = req.query.todas === 'true' ? null : (req.query.usuarioId || req.usuario?.id || null);
+    const usuarioId = req.usuario?.id || 1;
     const compras = await db.listarCompras(usuarioId);
     res.json({ sucesso: true, compras });
   } catch (error) {
@@ -360,12 +360,13 @@ app.get('/api/compras', async (req, res) => {
   }
 });
 
-// Endpoint para Detalhar uma Compra
+// Endpoint para Detalhar uma Compra (Estritamente privada do usuário autenticado)
 app.get('/api/compras/:id', async (req, res) => {
   try {
-    const compra = await db.detalharCompra(req.params.id);
+    const usuarioId = req.usuario?.id || 1;
+    const compra = await db.detalharCompra(req.params.id, usuarioId);
     if (!compra) {
-      return res.status(404).json({ sucesso: false, erro: 'Compra não encontrada.' });
+      return res.status(404).json({ sucesso: false, erro: 'Compra não encontrada ou acesso não autorizado.' });
     }
     res.json({ sucesso: true, compra });
   } catch (error) {
@@ -563,6 +564,18 @@ app.delete('/api/listas/itens/:itemId', async (req, res) => {
   try {
     await db.removerItemListaCompras(req.params.itemId);
     res.json({ sucesso: true, mensagem: 'Item removido da lista.' });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// Criar lista automática sugerida com os produtos mais comprados
+app.post('/api/listas/gerar-frequentes', async (req, res) => {
+  try {
+    const usuarioId = req.usuario?.id || 1;
+    const { nome } = req.body;
+    const lista = await db.gerarListaComMaisComprados(usuarioId, nome);
+    res.json({ sucesso: true, lista });
   } catch (error) {
     res.status(500).json({ sucesso: false, erro: error.message });
   }

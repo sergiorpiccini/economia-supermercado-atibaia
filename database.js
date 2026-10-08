@@ -646,9 +646,9 @@ async function listarUsuarios() {
   return users;
 }
 
-// Lista compras realizadas (se usuarioId informado, filtra pelo usuário; senão, lista todas)
-async function listarCompras(usuarioId = null) {
-  let sql = `
+// Lista compras realizadas (estritamente privadas do usuário autenticado)
+async function listarCompras(usuarioId = 1) {
+  const sql = `
     SELECT c.id, c.usuario_id, c.data_emissao, c.valor_total, c.total_itens, c.economia_estimada, c.created_at,
            e.nome as estabelecimento_nome, e.nome_fantasia as estabelecimento_fantasia,
            e.cnpj as estabelecimento_cnpj, e.endereco as estabelecimento_endereco,
@@ -656,21 +656,16 @@ async function listarCompras(usuarioId = null) {
     FROM compras c
     LEFT JOIN estabelecimentos e ON c.estabelecimento_id = e.id
     LEFT JOIN usuarios u ON c.usuario_id = u.id
+    WHERE c.usuario_id = ?
+    ORDER BY c.id DESC
   `;
-  const params = [];
-  if (usuarioId) {
-    sql += ` WHERE c.usuario_id = ?`;
-    params.push(usuarioId);
-  }
-  sql += ` ORDER BY c.id DESC`;
-
-  const compras = await allQuery(sql, params);
+  const compras = await allQuery(sql, [usuarioId || 1]);
   return compras;
 }
 
 // Detalha uma compra com todos os itens, autor e análise de economia item a item
-async function detalharCompra(compraId) {
-  const compra = await getQuery(`
+async function detalharCompra(compraId, usuarioId = null) {
+  let sql = `
     SELECT c.*, e.nome as estabelecimento_nome, e.nome_fantasia as estabelecimento_fantasia,
            e.cnpj as estabelecimento_cnpj, e.endereco as estabelecimento_endereco,
            u.nome as usuario_nome, u.bairro as usuario_bairro
@@ -678,8 +673,14 @@ async function detalharCompra(compraId) {
     LEFT JOIN estabelecimentos e ON c.estabelecimento_id = e.id
     LEFT JOIN usuarios u ON c.usuario_id = u.id
     WHERE c.id = ?
-  `, [compraId]);
+  `;
+  const params = [compraId];
+  if (usuarioId) {
+    sql += ' AND c.usuario_id = ?';
+    params.push(usuarioId);
+  }
 
+  const compra = await getQuery(sql, params);
   if (!compra) return null;
 
   const itens = await allQuery(`
@@ -1459,6 +1460,46 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
   };
 }
 
+// Criar lista automática a partir dos produtos mais frequentes do usuário
+async function gerarListaComMaisComprados(usuarioId = 1, nomeLista = 'Meus Itens Frequentes') {
+  let topProdutos = await allQuery(`
+    SELECT i.produto_id, COUNT(i.id) as vezes_comprado, p.nome_padrao
+    FROM itens_compra i
+    JOIN compras c ON i.compra_id = c.id
+    JOIN produtos p ON i.produto_id = p.id
+    WHERE c.usuario_id = ?
+    GROUP BY i.produto_id
+    ORDER BY vezes_comprado DESC
+    LIMIT 15
+  `, [usuarioId]);
+
+  if (topProdutos.length < 3) {
+    topProdutos = await allQuery(`
+      SELECT i.produto_id, COUNT(i.id) as vezes_comprado, p.nome_padrao
+      FROM itens_compra i
+      JOIN produtos p ON i.produto_id = p.id
+      GROUP BY i.produto_id
+      ORDER BY vezes_comprado DESC
+      LIMIT 15
+    `);
+  }
+
+  const nome = (nomeLista || 'Meus Itens Frequentes').trim();
+  const novaLista = await criarListaCompras(usuarioId, nome);
+
+  for (const prod of topProdutos) {
+    await runQuery(
+      'INSERT INTO itens_lista_compras (lista_id, produto_id, quantidade) VALUES (?, ?, ?)',
+      [novaLista.id, prod.produto_id, 1]
+    );
+  }
+
+  return {
+    ...novaLista,
+    total_itens: topProdutos.length
+  };
+}
+
 initDb();
 
 module.exports = {
@@ -1486,6 +1527,7 @@ module.exports = {
   atualizarItemListaCompras,
   removerItemListaCompras,
   excluirListaCompras,
+  gerarListaComMaisComprados,
   otimizarListaCompras,
   initDb,
   runQuery,
