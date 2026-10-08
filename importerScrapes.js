@@ -42,17 +42,28 @@ async function processarLoteScrape(itensScrape, db) {
   // 1. Garantir que os Estabelecimentos existem
   const mapaEstIds = {};
   for (const [chave, dadosEst] of Object.entries(MAPA_ESTABELECIMENTOS_SCRAPE)) {
-    let est = await db.getQuery('SELECT id FROM estabelecimentos WHERE UPPER(nome_fantasia) = ? OR cnpj = ?', [dadosEst.nome_fantasia.toUpperCase(), dadosEst.cnpj]);
+    let est = await db.getQuery('SELECT id FROM estabelecimentos WHERE cnpj = ? OR UPPER(nome_fantasia) = ?', [dadosEst.cnpj, dadosEst.nome_fantasia.toUpperCase()]);
     if (!est) {
-      const res = await db.runQuery(
-        'INSERT INTO estabelecimentos (nome, nome_fantasia, cnpj, endereco) VALUES (?, ?, ?, ?)',
+      await db.runQuery(
+        'INSERT OR IGNORE INTO estabelecimentos (nome, nome_fantasia, cnpj, endereco) VALUES (?, ?, ?, ?)',
         [dadosEst.nome, dadosEst.nome_fantasia, dadosEst.cnpj, dadosEst.endereco]
       );
-      mapaEstIds[chave] = res.id;
-    } else {
-      mapaEstIds[chave] = est.id;
+      est = await db.getQuery('SELECT id FROM estabelecimentos WHERE cnpj = ? OR UPPER(nome_fantasia) = ?', [dadosEst.cnpj, dadosEst.nome_fantasia.toUpperCase()]);
     }
+    mapaEstIds[chave] = est ? est.id : 1;
   }
+
+  // Garantir registro de compra para os Scrapes do Sistema (satisfaz FOREIGN KEY de compra_id)
+  let compraSistema = await db.getQuery("SELECT id FROM compras WHERE url_nfce = 'SISTEMA_SCRAPE'");
+  if (!compraSistema) {
+    const estIdInicial = Object.values(mapaEstIds)[0] || 1;
+    await db.runQuery(
+      "INSERT INTO compras (estabelecimento_id, usuario_id, url_nfce, data_emissao, valor_total, total_itens) VALUES (?, 1, 'SISTEMA_SCRAPE', '01/01/2026 00:00:00', 0, 0)",
+      [estIdInicial]
+    );
+    compraSistema = await db.getQuery("SELECT id FROM compras WHERE url_nfce = 'SISTEMA_SCRAPE'");
+  }
+  const sistemaCompraId = compraSistema ? compraSistema.id : 1;
 
   // 2. Carregar catálogo existente para correspondência inteligente
   const produtosExistentes = await db.allQuery('SELECT id, nome_padrao, codigo, unidade FROM produtos');
@@ -145,8 +156,8 @@ async function processarLoteScrape(itensScrape, db) {
 
     if (!precoExistente) {
       await db.runQuery(
-        'INSERT INTO historico_precos (produto_id, estabelecimento_id, compra_id, valor_unitario, preco_fracionado, data_registro) VALUES (?, ?, 0, ?, ?, ?)',
-        [prod.id, estId, precoVarejo, precoFracionado, dataRegistro]
+        'INSERT INTO historico_precos (produto_id, estabelecimento_id, compra_id, valor_unitario, preco_fracionado, data_registro) VALUES (?, ?, ?, ?, ?, ?)',
+        [prod.id, estId, sistemaCompraId, precoVarejo, precoFracionado, dataRegistro]
       );
       precosInseridos++;
     }
