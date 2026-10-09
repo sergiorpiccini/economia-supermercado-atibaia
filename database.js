@@ -142,7 +142,8 @@ async function initDb() {
     'ALTER TABLE itens_compra ADD COLUMN pack_qtd INTEGER DEFAULT 1',
     'ALTER TABLE itens_compra ADD COLUMN preco_unitario_fracionado REAL',
     'ALTER TABLE itens_compra ADD COLUMN preco_medida_padrao TEXT',
-    'ALTER TABLE historico_precos ADD COLUMN preco_fracionado REAL'
+    'ALTER TABLE historico_precos ADD COLUMN preco_fracionado REAL',
+    'ALTER TABLE itens_lista_compras ADD COLUMN grupo_id INTEGER'
   ];
 
   for (const sql of schemaSqls) {
@@ -1101,6 +1102,26 @@ async function adicionarProdutoAoGrupo(grupoId, produtoId) {
   return { id: res.id, sucesso: true };
 }
 
+// Adicionar múltiplos produtos a um grupo de comparação de uma só vez (Bulk Add)
+async function adicionarProdutosEmMassaAoGrupo(grupoId, produtoIds) {
+  if (!Array.isArray(produtoIds) || produtoIds.length === 0) return { inseridos: 0 };
+  let inseridos = 0;
+  for (const pid of produtoIds) {
+    const existe = await getQuery(
+      'SELECT id FROM itens_grupo_comparacao WHERE grupo_id = ? AND produto_id = ?',
+      [grupoId, pid]
+    );
+    if (!existe) {
+      await runQuery(
+        'INSERT INTO itens_grupo_comparacao (grupo_id, produto_id) VALUES (?, ?)',
+        [grupoId, pid]
+      );
+      inseridos++;
+    }
+  }
+  return { sucesso: true, inseridos };
+}
+
 // Remover produto de um grupo
 async function removerProdutoDoGrupo(grupoId, produtoId) {
   await runQuery(
@@ -1154,18 +1175,62 @@ async function obterListaCompras(listaId, usuarioId = 1) {
   const lista = await getQuery('SELECT * FROM listas_compras WHERE id = ? AND usuario_id = ?', [listaId, usuarioId]);
   if (!lista) return null;
 
-  const itens = await allQuery(`
-    SELECT i.id as item_id, i.produto_id, i.quantidade, i.observacao, i.comprado,
+  const itensRaw = await allQuery(`
+    SELECT i.id as item_id, i.produto_id, i.grupo_id, i.quantidade, i.observacao, i.comprado,
            p.nome_padrao, p.codigo, p.unidade,
-           ROUND(AVG(h.valor_unitario), 2) as preco_medio_cidade,
-           MIN(h.valor_unitario) as menor_preco_cidade
+           g.nome_grupo
     FROM itens_lista_compras i
-    JOIN produtos p ON i.produto_id = p.id
-    LEFT JOIN historico_precos h ON p.id = h.produto_id
+    LEFT JOIN produtos p ON i.produto_id = p.id
+    LEFT JOIN grupos_comparacao g ON i.grupo_id = g.id
     WHERE i.lista_id = ?
-    GROUP BY i.id
     ORDER BY i.comprado ASC, i.id DESC
   `, [listaId]);
+
+  const itens = await Promise.all(itensRaw.map(async item => {
+    if (item.grupo_id) {
+      // Cesta Flexível (avalia todos os produtos da cesta)
+      const prodsGrupo = await allQuery(
+        'SELECT produto_id FROM itens_grupo_comparacao WHERE grupo_id = ?',
+        [item.grupo_id]
+      );
+      const pIds = prodsGrupo.map(p => p.produto_id);
+      let menor = null;
+      let medio = null;
+      if (pIds.length > 0) {
+        const placeholders = pIds.map(() => '?').join(',');
+        const h = await getQuery(`
+          SELECT MIN(COALESCE(preco_fracionado, valor_unitario)) as menor,
+                 ROUND(AVG(COALESCE(preco_fracionado, valor_unitario)), 2) as medio
+          FROM historico_precos
+          WHERE produto_id IN (${placeholders})
+        `, pIds);
+        menor = h ? h.menor : null;
+        medio = h ? h.medio : null;
+      }
+      return {
+        ...item,
+        eh_cesta: 1,
+        nome_padrao: `[Cesta Flexível] ${item.nome_grupo || 'Cesta de Produtos'}`,
+        unidade: 'UN',
+        total_opcoes_cesta: pIds.length,
+        preco_medio_cidade: medio,
+        menor_preco_cidade: menor
+      };
+    } else {
+      const h = await getQuery(`
+        SELECT MIN(COALESCE(preco_fracionado, valor_unitario)) as menor,
+               ROUND(AVG(COALESCE(preco_fracionado, valor_unitario)), 2) as medio
+        FROM historico_precos
+        WHERE produto_id = ?
+      `, [item.produto_id]);
+      return {
+        ...item,
+        eh_cesta: 0,
+        preco_medio_cidade: h ? h.medio : null,
+        menor_preco_cidade: h ? h.menor : null
+      };
+    }
+  }));
 
   return {
     ...lista,
@@ -1173,8 +1238,31 @@ async function obterListaCompras(listaId, usuarioId = 1) {
   };
 }
 
-async function adicionarItemListaCompras(listaId, produtoId, quantidade = 1, observacao = '') {
+async function adicionarItemListaCompras(listaId, produtoId, quantidade = 1, observacao = '', grupoId = null) {
   const qtd = parseFloat(quantidade) || 1.0;
+
+  if (grupoId) {
+    const itemExistente = await getQuery(
+      'SELECT id, quantidade FROM itens_lista_compras WHERE lista_id = ? AND grupo_id = ?',
+      [listaId, grupoId]
+    );
+    if (itemExistente) {
+      const novaQtd = Number((itemExistente.quantidade + qtd).toFixed(3));
+      await runQuery(
+        "UPDATE itens_lista_compras SET quantidade = ?, observacao = COALESCE(NULLIF(?, ''), observacao) WHERE id = ?",
+        [novaQtd, observacao, itemExistente.id]
+      );
+      await runQuery("UPDATE listas_compras SET updated_at = datetime('now') WHERE id = ?", [listaId]);
+      return { id: itemExistente.id, atualizado: true, novaQtd };
+    }
+    const res = await runQuery(
+      'INSERT INTO itens_lista_compras (lista_id, produto_id, grupo_id, quantidade, observacao) VALUES (?, NULL, ?, ?, ?)',
+      [listaId, grupoId, qtd, observacao || null]
+    );
+    await runQuery("UPDATE listas_compras SET updated_at = datetime('now') WHERE id = ?", [listaId]);
+    return { id: res.id, criado: true };
+  }
+
   const itemExistente = await getQuery(
     'SELECT id, quantidade FROM itens_lista_compras WHERE lista_id = ? AND produto_id = ?',
     [listaId, produtoId]
@@ -1242,9 +1330,12 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
     itens = itensAdHoc;
   } else if (listaId) {
     itens = await allQuery(`
-      SELECT i.produto_id, i.quantidade, p.nome_padrao, p.unidade, p.codigo
+      SELECT i.id as item_id, i.produto_id, i.grupo_id, i.quantidade, 
+             p.nome_padrao, p.unidade, p.codigo,
+             g.nome_grupo
       FROM itens_lista_compras i
-      JOIN produtos p ON i.produto_id = p.id
+      LEFT JOIN produtos p ON i.produto_id = p.id
+      LEFT JOIN grupos_comparacao g ON i.grupo_id = g.id
       WHERE i.lista_id = ?
     `, [listaId]);
   }
@@ -1259,8 +1350,29 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
     };
   }
 
-  const produtoIds = itens.map(i => i.produto_id);
-  const placeholders = produtoIds.map(() => '?').join(',');
+  // Coleta todos os produto_ids (tanto de itens diretos quanto de produtos dentro das Cestas)
+  const gruposMap = new Map(); // grupo_id -> [produtos]
+  const todosProdutoIdsSet = new Set();
+
+  for (const item of itens) {
+    if (item.grupo_id) {
+      if (!gruposMap.has(item.grupo_id)) {
+        const prods = await allQuery(`
+          SELECT p.id, p.nome_padrao, p.unidade, p.codigo
+          FROM itens_grupo_comparacao ig
+          JOIN produtos p ON ig.produto_id = p.id
+          WHERE ig.grupo_id = ?
+        `, [item.grupo_id]);
+        gruposMap.set(item.grupo_id, prods);
+        prods.forEach(p => todosProdutoIdsSet.add(p.id));
+      }
+    } else if (item.produto_id) {
+      todosProdutoIdsSet.add(item.produto_id);
+    }
+  }
+
+  const produtoIds = Array.from(todosProdutoIdsSet);
+  const placeholders = produtoIds.length > 0 ? produtoIds.map(() => '?').join(',') : '0';
 
   // 1. Obter todos os estabelecimentos
   const todosMercados = await allQuery('SELECT id, nome, nome_fantasia, endereco FROM estabelecimentos ORDER BY id ASC');
@@ -1274,12 +1386,15 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
   });
 
   // 2. Obter os preços mais recentes de cada produto em cada mercado
-  const historico = await allQuery(`
-    SELECT h.produto_id, h.estabelecimento_id, h.valor_unitario, h.preco_fracionado, h.data_registro, h.id as hist_id
-    FROM historico_precos h
-    WHERE h.produto_id IN (${placeholders})
-    ORDER BY h.id DESC
-  `, produtoIds);
+  let historico = [];
+  if (produtoIds.length > 0) {
+    historico = await allQuery(`
+      SELECT h.produto_id, h.estabelecimento_id, h.valor_unitario, h.preco_fracionado, h.data_registro, h.id as hist_id
+      FROM historico_precos h
+      WHERE h.produto_id IN (${placeholders})
+      ORDER BY h.id DESC
+    `, produtoIds);
+  }
 
   const mapaPrecos = new Map();
   historico.forEach(row => {
@@ -1296,57 +1411,129 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
     }
   });
 
-  // 3. Analisar cada item da lista
+  // 3. Analisar cada item da lista (produto avulso ou Cesta Flexível)
   const comparativoItens = [];
   const mercadosComPreco = new Set();
 
   itens.forEach(item => {
-    const pId = item.produto_id;
     const qtd = parseFloat(item.quantidade) || 1.0;
-    const precosItemMercados = mapaPrecos.get(pId) || new Map();
-
+    const ehCesta = !!item.grupo_id;
     const precosPorEst = {};
     let menorPrecoItem = Infinity;
     let melhorEstId = null;
     let somaPrecos = 0;
     let contPrecos = 0;
 
-    precosItemMercados.forEach((dadosPreco, estId) => {
-      mercadosComPreco.add(estId);
-      const estInfo = mapaMercados.get(estId);
-      const precoUnit = dadosPreco.preco;
-      const subtotalItem = Number((precoUnit * qtd).toFixed(2));
+    if (ehCesta) {
+      const prodsCesta = gruposMap.get(item.grupo_id) || [];
+      // Para cada mercado, escolhe o produto mais barato desta Cesta naquele mercado
+      todosMercados.forEach(mercado => {
+        const estId = mercado.id;
+        let menorPrecoMercado = Infinity;
+        let prodEscolhidoMercado = null;
+        let dadosEscolhido = null;
 
-      precosPorEst[estId] = {
-        mercadoId: estId,
-        mercadoNome: estInfo ? estInfo.nome : `Mercado #${estId}`,
-        precoUnitario: precoUnit,
-        subtotal: subtotalItem,
-        dataRegistro: dadosPreco.dataRegistro
-      };
+        prodsCesta.forEach(p => {
+          const precosP = mapaPrecos.get(p.id);
+          if (precosP && precosP.has(estId)) {
+            const dp = precosP.get(estId);
+            const pr = dp.precoFracionado || dp.preco;
+            if (pr < menorPrecoMercado) {
+              menorPrecoMercado = pr;
+              prodEscolhidoMercado = p;
+              dadosEscolhido = dp;
+            }
+          }
+        });
 
-      somaPrecos += precoUnit;
-      contPrecos++;
+        if (prodEscolhidoMercado && menorPrecoMercado < Infinity) {
+          mercadosComPreco.add(estId);
+          const estInfo = mapaMercados.get(estId);
+          const subtotalItem = Number((menorPrecoMercado * qtd).toFixed(2));
 
-      if (precoUnit < menorPrecoItem) {
-        menorPrecoItem = precoUnit;
-        melhorEstId = estId;
-      }
-    });
+          precosPorEst[estId] = {
+            mercadoId: estId,
+            mercadoNome: estInfo ? estInfo.nome : `Mercado #${estId}`,
+            precoUnitario: menorPrecoMercado,
+            subtotal: subtotalItem,
+            produtoEscolhidoNome: prodEscolhidoMercado.nome_padrao,
+            produtoEscolhidoId: prodEscolhidoMercado.id,
+            dataRegistro: dadosEscolhido ? dadosEscolhido.dataRegistro : ''
+          };
 
-    const precoMedioItem = contPrecos > 0 ? Number((somaPrecos / contPrecos).toFixed(2)) : 0;
+          somaPrecos += menorPrecoMercado;
+          contPrecos++;
 
-    comparativoItens.push({
-      produtoId: pId,
-      nome: item.nome_padrao,
-      unidade: item.unidade || 'UN',
-      quantidade: qtd,
-      precoMedio: precoMedioItem,
-      menorPreco: menorPrecoItem < Infinity ? menorPrecoItem : null,
-      melhorMercadoId: melhorEstId,
-      melhorMercadoNome: melhorEstId && mapaMercados.get(melhorEstId) ? mapaMercados.get(melhorEstId).nome : null,
-      precosPorMercado: precosPorEst
-    });
+          if (menorPrecoMercado < menorPrecoItem) {
+            menorPrecoItem = menorPrecoMercado;
+            melhorEstId = estId;
+          }
+        }
+      });
+
+      const precoMedioItem = contPrecos > 0 ? Number((somaPrecos / contPrecos).toFixed(2)) : 0;
+
+      comparativoItens.push({
+        itemId: item.item_id || null,
+        produtoId: null,
+        grupoId: item.grupo_id,
+        ehCesta: true,
+        nome: `[Cesta Flexível] ${item.nome_grupo || 'Cesta de Produtos'}`,
+        unidade: 'UN',
+        quantidade: qtd,
+        totalOpcoes: prodsCesta.length,
+        precoMedio: precoMedioItem,
+        menorPreco: menorPrecoItem < Infinity ? menorPrecoItem : null,
+        melhorMercadoId: melhorEstId,
+        melhorMercadoNome: melhorEstId && mapaMercados.get(melhorEstId) ? mapaMercados.get(melhorEstId).nome : null,
+        melhorProdutoNome: melhorEstId && precosPorEst[melhorEstId] ? precosPorEst[melhorEstId].produtoEscolhidoNome : null,
+        precosPorMercado: precosPorEst
+      });
+
+    } else {
+      const pId = item.produto_id;
+      const precosItemMercados = mapaPrecos.get(pId) || new Map();
+
+      precosItemMercados.forEach((dadosPreco, estId) => {
+        mercadosComPreco.add(estId);
+        const estInfo = mapaMercados.get(estId);
+        const precoUnit = dadosPreco.precoFracionado || dadosPreco.preco;
+        const subtotalItem = Number((precoUnit * qtd).toFixed(2));
+
+        precosPorEst[estId] = {
+          mercadoId: estId,
+          mercadoNome: estInfo ? estInfo.nome : `Mercado #${estId}`,
+          precoUnitario: precoUnit,
+          subtotal: subtotalItem,
+          dataRegistro: dadosPreco.dataRegistro
+        };
+
+        somaPrecos += precoUnit;
+        contPrecos++;
+
+        if (precoUnit < menorPrecoItem) {
+          menorPrecoItem = precoUnit;
+          melhorEstId = estId;
+        }
+      });
+
+      const precoMedioItem = contPrecos > 0 ? Number((somaPrecos / contPrecos).toFixed(2)) : 0;
+
+      comparativoItens.push({
+        itemId: item.item_id || null,
+        produtoId: pId,
+        grupoId: null,
+        ehCesta: false,
+        nome: item.nome_padrao,
+        unidade: item.unidade || 'UN',
+        quantidade: qtd,
+        precoMedio: precoMedioItem,
+        menorPreco: menorPrecoItem < Infinity ? menorPrecoItem : null,
+        melhorMercadoId: melhorEstId,
+        melhorMercadoNome: melhorEstId && mapaMercados.get(melhorEstId) ? mapaMercados.get(melhorEstId).nome : null,
+        precosPorMercado: precosPorEst
+      });
+    }
   });
 
   // 4. Calcular Cesta em Cada Estabelecimento (Cenário Monomercado)
@@ -1366,7 +1553,10 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
         itensEncontrados++;
         detalhesItens.push({
           produtoId: item.produtoId,
+          grupoId: item.grupoId,
+          ehCesta: item.ehCesta,
           nome: item.nome,
+          produtoEscolhidoNome: precoEst.produtoEscolhidoNome || null,
           quantidade: item.quantidade,
           precoUnitario: precoEst.precoUnitario,
           subtotal: precoEst.subtotal,
@@ -1375,11 +1565,15 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
       } else {
         itensFaltantes.push({
           produtoId: item.produtoId,
+          grupoId: item.grupoId,
+          ehCesta: item.ehCesta,
           nome: item.nome,
           quantidade: item.quantidade
         });
         detalhesItens.push({
           produtoId: item.produtoId,
+          grupoId: item.grupoId,
+          ehCesta: item.ehCesta,
           nome: item.nome,
           quantidade: item.quantidade,
           precoUnitario: null,
@@ -1532,6 +1726,7 @@ module.exports = {
   criarGrupoComparacao,
   listarGruposComparacao,
   adicionarProdutoAoGrupo,
+  adicionarProdutosEmMassaAoGrupo,
   removerProdutoDoGrupo,
   excluirGrupoComparacao,
   criarListaCompras,

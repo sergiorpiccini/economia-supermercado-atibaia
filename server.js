@@ -455,6 +455,20 @@ app.post('/api/grupos/:id/produtos', async (req, res) => {
   }
 });
 
+// Adicionar produtos em massa ao grupo (Bulk / Selecionar Todos)
+app.post('/api/grupos/:id/produtos/bulk', async (req, res) => {
+  try {
+    const { produtoIds } = req.body;
+    if (!produtoIds || !Array.isArray(produtoIds) || produtoIds.length === 0) {
+      return res.status(400).json({ sucesso: false, erro: 'Lista de IDs de produtos é obrigatória.' });
+    }
+    const resultado = await db.adicionarProdutosEmMassaAoGrupo(req.params.id, produtoIds);
+    res.json({ sucesso: true, ...resultado });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
 app.delete('/api/grupos/:id/produtos/:prodId', async (req, res) => {
   try {
     await db.removerProdutoDoGrupo(req.params.id, req.params.prodId);
@@ -545,14 +559,14 @@ app.delete('/api/listas/:id', async (req, res) => {
   }
 });
 
-// Adicionar produto à lista
+// Adicionar produto ou Cesta Flexível à lista
 app.post('/api/listas/:id/itens', async (req, res) => {
   try {
-    const { produto_id, quantidade, observacao } = req.body;
-    if (!produto_id) {
-      return res.status(400).json({ sucesso: false, erro: 'produto_id é obrigatório.' });
+    const { produto_id, grupo_id, quantidade, observacao } = req.body;
+    if (!produto_id && !grupo_id) {
+      return res.status(400).json({ sucesso: false, erro: 'produto_id ou grupo_id é obrigatório.' });
     }
-    const resultado = await db.adicionarItemListaCompras(req.params.id, produto_id, quantidade, observacao);
+    const resultado = await db.adicionarItemListaCompras(req.params.id, produto_id, quantidade, observacao, grupo_id);
     res.json({ sucesso: true, resultado });
   } catch (error) {
     res.status(500).json({ sucesso: false, erro: error.message });
