@@ -431,12 +431,40 @@ app.get('/api/grupos', async (req, res) => {
 
 app.post('/api/grupos', async (req, res) => {
   try {
-    const { nome, descricao } = req.body;
+    const { nome, descricao, tipo_cesta, termo_chave } = req.body;
     if (!nome || !nome.trim()) {
       return res.status(400).json({ sucesso: false, erro: 'Nome do grupo é obrigatório.' });
     }
-    const grupo = await db.criarGrupoComparacao(nome, descricao);
+    const grupo = await db.criarGrupoComparacao(nome, descricao, tipo_cesta, termo_chave);
     res.json({ sucesso: true, grupo });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// Bloquear produto / Adicionar à Lista Negra
+app.post('/api/grupos/:id/bloquear', async (req, res) => {
+  try {
+    const { produtoId, motivo } = req.body;
+    if (!produtoId) {
+      return res.status(400).json({ sucesso: false, erro: 'ID do produto é obrigatório.' });
+    }
+    const resultado = await db.bloquearProdutoCesta(req.params.id, produtoId, motivo);
+    res.json({ sucesso: true, ...resultado });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
+// Desbloquear produto / Reativar na Cesta
+app.post('/api/grupos/:id/desbloquear', async (req, res) => {
+  try {
+    const { produtoId } = req.body;
+    if (!produtoId) {
+      return res.status(400).json({ sucesso: false, erro: 'ID do produto é obrigatório.' });
+    }
+    const resultado = await db.desbloquearProdutoCesta(req.params.id, produtoId);
+    res.json({ sucesso: true, ...resultado });
   } catch (error) {
     res.status(500).json({ sucesso: false, erro: error.message });
   }
@@ -471,8 +499,8 @@ app.post('/api/grupos/:id/produtos/bulk', async (req, res) => {
 
 app.delete('/api/grupos/:id/produtos/:prodId', async (req, res) => {
   try {
-    await db.removerProdutoDoGrupo(req.params.id, req.params.prodId);
-    res.json({ sucesso: true, mensagem: 'Produto removido do grupo.' });
+    const resultado = await db.removerProdutoDoGrupo(req.params.id, req.params.prodId);
+    res.json({ sucesso: true, mensagem: 'Produto removido / bloqueado na cesta.', ...resultado });
   } catch (error) {
     res.status(500).json({ sucesso: false, erro: error.message });
   }

@@ -134,6 +134,16 @@ async function initDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (lista_id) REFERENCES listas_compras(id) ON DELETE CASCADE,
       FOREIGN KEY (produto_id) REFERENCES produtos(id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS exclusoes_grupo_comparacao (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      grupo_id INTEGER NOT NULL,
+      produto_id INTEGER NOT NULL,
+      motivo TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(grupo_id, produto_id),
+      FOREIGN KEY (grupo_id) REFERENCES grupos_comparacao(id) ON DELETE CASCADE,
+      FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE CASCADE
     )`
   ];
 
@@ -145,7 +155,9 @@ async function initDb() {
     'ALTER TABLE itens_compra ADD COLUMN preco_unitario_fracionado REAL',
     'ALTER TABLE itens_compra ADD COLUMN preco_medida_padrao TEXT',
     'ALTER TABLE historico_precos ADD COLUMN preco_fracionado REAL',
-    'ALTER TABLE itens_lista_compras ADD COLUMN grupo_id INTEGER'
+    'ALTER TABLE itens_lista_compras ADD COLUMN grupo_id INTEGER',
+    'ALTER TABLE grupos_comparacao ADD COLUMN tipo_cesta TEXT DEFAULT "dinamica"',
+    'ALTER TABLE grupos_comparacao ADD COLUMN termo_chave TEXT'
   ];
 
   for (const sql of schemaSqls) {
@@ -1026,28 +1038,81 @@ async function listarTodosProdutos(termoBusca = '', limite = 500) {
   });
 }
 
-// Criar Grupo de Comparação
-async function criarGrupoComparacao(nomeGrupo, descricao = '') {
+// Criar Grupo de Comparação (Dinâmica por termo ou Estática por produtos)
+async function criarGrupoComparacao(nomeGrupo, descricao = '', tipoCesta = 'dinamica', termoChave = '') {
+  const nome = nomeGrupo.trim();
+  const tipo = tipoCesta === 'estatica' ? 'estatica' : 'dinamica';
+  const termo = termoChave ? termoChave.trim() : (tipo === 'dinamica' ? nome : '');
   const res = await runQuery(
-    'INSERT INTO grupos_comparacao (nome_grupo, descricao) VALUES (?, ?)',
-    [nomeGrupo.trim(), descricao ? descricao.trim() : '']
+    'INSERT INTO grupos_comparacao (nome_grupo, descricao, tipo_cesta, termo_chave) VALUES (?, ?, ?, ?)',
+    [nome, descricao ? descricao.trim() : '', tipo, termo]
   );
-  return { id: res.id, nome_grupo: nomeGrupo.trim(), descricao };
+  return { id: res.id, nome_grupo: nome, descricao, tipo_cesta: tipo, termo_chave: termo };
 }
 
-// Listar Grupos de Comparação com seus produtos e o produto vencedor (mais barato com base em peso/medida equivalente)
+// Listar Grupos de Comparação com seus produtos, lista negra e o produto vencedor
 async function listarGruposComparacao() {
   const grupos = await allQuery('SELECT * FROM grupos_comparacao ORDER BY id DESC');
   
   const gruposComProdutos = await Promise.all(grupos.map(async (g) => {
-    const produtos = await allQuery(`
-      SELECT p.id, p.nome_padrao, p.unidade, p.codigo,
-             ig.created_at as adicionado_em
-      FROM itens_grupo_comparacao ig
-      JOIN produtos p ON ig.produto_id = p.id
-      WHERE ig.grupo_id = ?
+    const ehDinamica = g.tipo_cesta === 'dinamica' || (!g.tipo_cesta && g.termo_chave) || (!g.tipo_cesta && !g.termo_chave);
+    const termo = (g.termo_chave || (ehDinamica ? g.nome_grupo : '')).trim();
+
+    // 1. Obter exclusões (Lista Negra) deste grupo
+    const exclusoesRows = await allQuery(`
+      SELECT p.id, p.nome_padrao, p.unidade, p.codigo, eg.motivo, eg.created_at as bloqueado_em
+      FROM exclusoes_grupo_comparacao eg
+      JOIN produtos p ON eg.produto_id = p.id
+      WHERE eg.grupo_id = ?
       ORDER BY p.nome_padrao ASC
     `, [g.id]);
+
+    const idsBloqueadosSet = new Set(exclusoesRows.map(e => e.id));
+
+    let produtos = [];
+
+    if (ehDinamica && termo) {
+      // Busca dinâmica por palavras-chave em todo o catálogo de produtos de Atibaia
+      const palavras = termo.split(/\s+/).filter(Boolean);
+      const whereClause = palavras.map(() => 'p.nome_padrao LIKE ?').join(' AND ');
+      const params = palavras.map(p => `%${p}%`);
+
+      const prodsDinamicos = await allQuery(`
+        SELECT p.id, p.nome_padrao, p.unidade, p.codigo
+        FROM produtos p
+        WHERE ${whereClause}
+        ORDER BY p.nome_padrao ASC
+      `, params);
+
+      // Também inclui produtos adicionados explicitamente caso existam
+      const prodsExplicitos = await allQuery(`
+        SELECT p.id, p.nome_padrao, p.unidade, p.codigo
+        FROM itens_grupo_comparacao ig
+        JOIN produtos p ON ig.produto_id = p.id
+        WHERE ig.grupo_id = ?
+        ORDER BY p.nome_padrao ASC
+      `, [g.id]);
+
+      const mapaTodos = new Map();
+      prodsDinamicos.forEach(p => {
+        if (!idsBloqueadosSet.has(p.id)) mapaTodos.set(p.id, p);
+      });
+      prodsExplicitos.forEach(p => {
+        if (!idsBloqueadosSet.has(p.id)) mapaTodos.set(p.id, p);
+      });
+
+      produtos = Array.from(mapaTodos.values());
+    } else {
+      // Cesta Estática tradicional
+      produtos = await allQuery(`
+        SELECT p.id, p.nome_padrao, p.unidade, p.codigo,
+               ig.created_at as adicionado_em
+        FROM itens_grupo_comparacao ig
+        JOIN produtos p ON ig.produto_id = p.id
+        WHERE ig.grupo_id = ?
+        ORDER BY p.nome_padrao ASC
+      `, [g.id]);
+    }
 
     const prodsComDetalhes = await Promise.all(produtos.map(async (prod) => {
       const hist = await allQuery(`
@@ -1107,18 +1172,48 @@ async function listarGruposComparacao() {
       id: g.id,
       nome_grupo: g.nome_grupo,
       descricao: g.descricao,
+      tipo_cesta: ehDinamica ? 'dinamica' : 'estatica',
+      termo_chave: termo,
       created_at: g.created_at,
       total_produtos: produtos.length,
       vencedor,
-      produtos: prodsComDetalhes
+      produtos: prodsComDetalhes,
+      produtos_bloqueados: exclusoesRows
     };
   }));
 
   return gruposComProdutos;
 }
 
+// Bloquear produto / Adicionar à Lista Negra da Cesta
+async function bloquearProdutoCesta(grupoId, produtoId, motivo = '') {
+  await runQuery('DELETE FROM itens_grupo_comparacao WHERE grupo_id = ? AND produto_id = ?', [grupoId, produtoId]);
+  
+  // Tenta inserir na tabela de exclusões
+  try {
+    await runQuery(`
+      INSERT INTO exclusoes_grupo_comparacao (grupo_id, produto_id, motivo)
+      VALUES (?, ?, ?)
+    `, [grupoId, produtoId, motivo || null]);
+  } catch (e) {
+    // Se já existia, atualiza motivo
+    await runQuery('UPDATE exclusoes_grupo_comparacao SET motivo = ? WHERE grupo_id = ? AND produto_id = ?', [motivo || null, grupoId, produtoId]);
+  }
+
+  return { sucesso: true, bloqueado: true };
+}
+
+// Desbloquear produto / Reativar na Cesta
+async function desbloquearProdutoCesta(grupoId, produtoId) {
+  await runQuery('DELETE FROM exclusoes_grupo_comparacao WHERE grupo_id = ? AND produto_id = ?', [grupoId, produtoId]);
+  return { sucesso: true, desbloqueado: true };
+}
+
 // Adicionar produto a um grupo de comparação
 async function adicionarProdutoAoGrupo(grupoId, produtoId) {
+  // Se estiver bloqueado, desbloqueia primeiro
+  await desbloquearProdutoCesta(grupoId, produtoId);
+
   const existe = await getQuery(
     'SELECT id FROM itens_grupo_comparacao WHERE grupo_id = ? AND produto_id = ?',
     [grupoId, produtoId]
@@ -1137,6 +1232,7 @@ async function adicionarProdutosEmMassaAoGrupo(grupoId, produtoIds) {
   if (!Array.isArray(produtoIds) || produtoIds.length === 0) return { inseridos: 0 };
   let inseridos = 0;
   for (const pid of produtoIds) {
+    await desbloquearProdutoCesta(grupoId, pid);
     const existe = await getQuery(
       'SELECT id FROM itens_grupo_comparacao WHERE grupo_id = ? AND produto_id = ?',
       [grupoId, pid]
@@ -1152,8 +1248,13 @@ async function adicionarProdutosEmMassaAoGrupo(grupoId, produtoIds) {
   return { sucesso: true, inseridos };
 }
 
-// Remover produto de um grupo
+// Remover produto de um grupo (bloqueia se dinâmico, remove se estático)
 async function removerProdutoDoGrupo(grupoId, produtoId) {
+  const grupo = await getQuery('SELECT tipo_cesta, termo_chave FROM grupos_comparacao WHERE id = ?', [grupoId]);
+  const ehDinamica = !grupo || grupo.tipo_cesta === 'dinamica' || (!grupo.tipo_cesta && grupo.termo_chave);
+  if (ehDinamica) {
+    return await bloquearProdutoCesta(grupoId, produtoId);
+  }
   await runQuery(
     'DELETE FROM itens_grupo_comparacao WHERE grupo_id = ? AND produto_id = ?',
     [grupoId, produtoId]
@@ -1163,6 +1264,7 @@ async function removerProdutoDoGrupo(grupoId, produtoId) {
 
 // Excluir grupo de comparação
 async function excluirGrupoComparacao(grupoId) {
+  await runQuery('DELETE FROM exclusoes_grupo_comparacao WHERE grupo_id = ?', [grupoId]);
   await runQuery('DELETE FROM itens_grupo_comparacao WHERE grupo_id = ?', [grupoId]);
   await runQuery('DELETE FROM grupos_comparacao WHERE id = ?', [grupoId]);
   return { sucesso: true };
@@ -1208,7 +1310,7 @@ async function obterListaCompras(listaId, usuarioId = 1) {
   const itensRaw = await allQuery(`
     SELECT i.id as item_id, i.produto_id, i.grupo_id, i.quantidade, i.observacao, i.comprado,
            p.nome_padrao, p.codigo, p.unidade,
-           g.nome_grupo
+           g.nome_grupo, g.tipo_cesta, g.termo_chave
     FROM itens_lista_compras i
     LEFT JOIN produtos p ON i.produto_id = p.id
     LEFT JOIN grupos_comparacao g ON i.grupo_id = g.id
@@ -1218,12 +1320,47 @@ async function obterListaCompras(listaId, usuarioId = 1) {
 
   const itens = await Promise.all(itensRaw.map(async item => {
     if (item.grupo_id) {
-      // Cesta Flexível (avalia todos os produtos da cesta)
-      const prodsGrupo = await allQuery(
-        'SELECT produto_id FROM itens_grupo_comparacao WHERE grupo_id = ?',
-        [item.grupo_id]
-      );
-      const pIds = prodsGrupo.map(p => p.produto_id);
+      // Cesta Flexível (avalia todos os produtos da cesta, dinâmicos ou estáticos)
+      const ehDinamica = item.tipo_cesta === 'dinamica' || (!item.tipo_cesta && item.termo_chave) || (!item.tipo_cesta && !item.termo_chave);
+      const termo = (item.termo_chave || (ehDinamica ? item.nome_grupo : '') || '').trim();
+
+      // Exclusões
+      const exclRows = await allQuery('SELECT produto_id FROM exclusoes_grupo_comparacao WHERE grupo_id = ?', [item.grupo_id]);
+      const idsBloqueados = new Set(exclRows.map(e => e.produto_id));
+
+      let prods = [];
+      if (ehDinamica && termo) {
+        const palavras = termo.split(/\s+/).filter(Boolean);
+        const whereClause = palavras.map(() => 'p.nome_padrao LIKE ?').join(' AND ');
+        const params = palavras.map(p => `%${p}%`);
+
+        const prodsDinamicos = await allQuery(`
+          SELECT p.id, p.nome_padrao, p.unidade, p.codigo
+          FROM produtos p
+          WHERE ${whereClause}
+        `, params);
+
+        const prodsExplicitos = await allQuery(`
+          SELECT p.id, p.nome_padrao, p.unidade, p.codigo
+          FROM itens_grupo_comparacao ig
+          JOIN produtos p ON ig.produto_id = p.id
+          WHERE ig.grupo_id = ?
+        `, [item.grupo_id]);
+
+        const mapa = new Map();
+        prodsDinamicos.forEach(p => { if (!idsBloqueados.has(p.id)) mapa.set(p.id, p); });
+        prodsExplicitos.forEach(p => { if (!idsBloqueados.has(p.id)) mapa.set(p.id, p); });
+        prods = Array.from(mapa.values());
+      } else {
+        prods = await allQuery(`
+          SELECT p.id, p.nome_padrao, p.unidade, p.codigo
+          FROM itens_grupo_comparacao ig
+          JOIN produtos p ON ig.produto_id = p.id
+          WHERE ig.grupo_id = ?
+        `, [item.grupo_id]);
+      }
+
+      const pIds = prods.map(p => p.id);
       let menor = null;
       let medio = null;
       if (pIds.length > 0) {
@@ -1369,7 +1506,7 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
     itens = await allQuery(`
       SELECT i.id as item_id, i.produto_id, i.grupo_id, i.quantidade, 
              p.nome_padrao, p.unidade, p.codigo,
-             g.nome_grupo
+             g.nome_grupo, g.tipo_cesta, g.termo_chave
       FROM itens_lista_compras i
       LEFT JOIN produtos p ON i.produto_id = p.id
       LEFT JOIN grupos_comparacao g ON i.grupo_id = g.id
@@ -1387,19 +1524,52 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
     };
   }
 
-  // Coleta todos os produto_ids (tanto de itens diretos quanto de produtos dentro das Cestas)
+  // Coleta todos os produto_ids (tanto de itens diretos quanto de produtos dentro das Cestas dinâmicas/estáticas)
   const gruposMap = new Map(); // grupo_id -> [produtos]
   const todosProdutoIdsSet = new Set();
 
   for (const item of itens) {
     if (item.grupo_id) {
       if (!gruposMap.has(item.grupo_id)) {
-        const prods = await allQuery(`
-          SELECT p.id, p.nome_padrao, p.unidade, p.codigo
-          FROM itens_grupo_comparacao ig
-          JOIN produtos p ON ig.produto_id = p.id
-          WHERE ig.grupo_id = ?
-        `, [item.grupo_id]);
+        const ehDinamica = item.tipo_cesta === 'dinamica' || (!item.tipo_cesta && item.termo_chave) || (!item.tipo_cesta && !item.termo_chave);
+        const termo = (item.termo_chave || (ehDinamica ? item.nome_grupo : '') || '').trim();
+
+        // Exclusões
+        const exclRows = await allQuery('SELECT produto_id FROM exclusoes_grupo_comparacao WHERE grupo_id = ?', [item.grupo_id]);
+        const idsBloqueados = new Set(exclRows.map(e => e.produto_id));
+
+        let prods = [];
+        if (ehDinamica && termo) {
+          const palavras = termo.split(/\s+/).filter(Boolean);
+          const whereClause = palavras.map(() => 'p.nome_padrao LIKE ?').join(' AND ');
+          const params = palavras.map(p => `%${p}%`);
+
+          const prodsDinamicos = await allQuery(`
+            SELECT p.id, p.nome_padrao, p.unidade, p.codigo
+            FROM produtos p
+            WHERE ${whereClause}
+          `, params);
+
+          const prodsExplicitos = await allQuery(`
+            SELECT p.id, p.nome_padrao, p.unidade, p.codigo
+            FROM itens_grupo_comparacao ig
+            JOIN produtos p ON ig.produto_id = p.id
+            WHERE ig.grupo_id = ?
+          `, [item.grupo_id]);
+
+          const mapa = new Map();
+          prodsDinamicos.forEach(p => { if (!idsBloqueados.has(p.id)) mapa.set(p.id, p); });
+          prodsExplicitos.forEach(p => { if (!idsBloqueados.has(p.id)) mapa.set(p.id, p); });
+          prods = Array.from(mapa.values());
+        } else {
+          prods = await allQuery(`
+            SELECT p.id, p.nome_padrao, p.unidade, p.codigo
+            FROM itens_grupo_comparacao ig
+            JOIN produtos p ON ig.produto_id = p.id
+            WHERE ig.grupo_id = ?
+          `, [item.grupo_id]);
+        }
+
         gruposMap.set(item.grupo_id, prods);
         prods.forEach(p => todosProdutoIdsSet.add(p.id));
       }
@@ -1784,6 +1954,8 @@ module.exports = {
   buscarProdutosAutocomplete,
   criarGrupoComparacao,
   listarGruposComparacao,
+  bloquearProdutoCesta,
+  desbloquearProdutoCesta,
   adicionarProdutoAoGrupo,
   adicionarProdutosEmMassaAoGrupo,
   removerProdutoDoGrupo,
