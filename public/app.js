@@ -1183,6 +1183,9 @@ async function carregarGruposComparacao() {
         const v = grupo.vencedor;
         const precoDisplay = formatCurrency(v.menorPreco || v.ultimoPreco);
         const normBadge = v.textoNormalizado ? `<span class="inline-block bg-emerald-200/80 text-emerald-900 text-[10px] font-bold px-1.5 py-0.5 rounded ml-1">${escapeHtml(v.textoNormalizado)}</span>` : '';
+        const packVencedor = (v.ehPack && v.valorOriginalPack && v.qtdPack > 1)
+          ? `<span class="text-[10px] text-emerald-700 block font-medium mt-0.5">📦 Pack com ${v.qtdPack} un por ${formatCurrency(v.valorOriginalPack)}</span>`
+          : '';
         vencedorHtml = `
           <div class="bg-emerald-100/70 border border-emerald-200/80 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div class="flex items-center gap-2">
@@ -1191,6 +1194,7 @@ async function carregarGruposComparacao() {
                 <span class="text-[10px] uppercase tracking-wider font-bold text-emerald-800 block">Opção Mais Econômica na Cesta</span>
                 <span class="font-black text-xs text-slate-900">${escapeHtml(v.nome_padrao)}</span>
                 <span class="text-[11px] text-emerald-800 block">no <strong>${escapeHtml(v.melhorMercado || v.ultimoMercado)}</strong> ${v.melhorEndereco ? `(${escapeHtml(v.melhorEndereco)})` : ''}</span>
+                ${packVencedor}
               </div>
             </div>
             <div class="text-right self-end sm:self-auto">
@@ -1217,6 +1221,9 @@ async function carregarGruposComparacao() {
           const ehVencedor = grupo.vencedor && grupo.vencedor.id === p.id;
           const precoItem = p.menorPreco > 0 ? formatCurrency(p.menorPreco) : '--';
           const normTexto = p.textoNormalizado ? ` <span class="text-emerald-700 font-semibold">(${escapeHtml(p.textoNormalizado)})</span>` : '';
+          const packObs = (p.ehPack && p.valorOriginalPack && p.qtdPack > 1) 
+            ? `<span class="text-[10px] text-slate-400 block font-normal">📦 Pack c/ ${p.qtdPack} un por ${formatCurrency(p.valorOriginalPack)}</span>` 
+            : '';
           return `
             <div class="flex items-center justify-between p-2.5 bg-white rounded-lg border ${ehVencedor ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200'} text-xs gap-2">
               <div class="flex-1 min-w-0">
@@ -1225,6 +1232,7 @@ async function carregarGruposComparacao() {
                 </div>
                 <div class="text-[10px] text-slate-500 mt-0.5">
                   Menor: <strong class="text-emerald-700">${precoItem}</strong>${normTexto} no ${escapeHtml(p.melhorMercado || 'Mercado')}
+                  ${packObs}
                 </div>
               </div>
               <div class="flex items-center gap-2 flex-shrink-0">
