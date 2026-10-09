@@ -2068,19 +2068,42 @@ async function carregarDetalhesLista(listaId) {
 
     container.innerHTML = itens.map(item => {
       const ehComprado = item.comprado == 1;
-      const refMedio = item.preco_medio_cidade ? `Média Atibaia: R$ ${Number(item.preco_medio_cidade).toFixed(2).replace('.', ',')}` : 'Preço sob consulta';
-      const refMenor = item.menor_preco_cidade ? ` • Menor: R$ ${Number(item.menor_preco_cidade).toFixed(2).replace('.', ',')}` : '';
+      const ehCesta = !!item.eh_cesta;
+
+      let tituloItem = '';
+      let subtituloItem = '';
+
+      if (ehCesta) {
+        const nomeLimpo = item.nome_padrao.replace('[Cesta Flexível] ', '');
+        tituloItem = `
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded uppercase flex items-center gap-1">
+              <i data-lucide="layers" class="w-3 h-3"></i> Cesta Flexível
+            </span>
+            <span class="font-bold text-slate-900 text-sm ${ehComprado ? 'line-through text-slate-500' : ''}">${escapeHtml(nomeLimpo)}</span>
+          </div>
+        `;
+        const menorRef = item.menor_preco_cidade ? `Menor em Atibaia: R$ ${Number(item.menor_preco_cidade).toFixed(2).replace('.', ',')}` : 'Preço dinâmico';
+        subtituloItem = `${item.total_opcoes_cesta || 0} marcas equivalentes • ${menorRef} (escolhe o mais barato por mercado)`;
+      } else {
+        tituloItem = `
+          <p class="font-bold text-slate-900 text-sm truncate ${ehComprado ? 'line-through text-slate-500' : ''}">
+            ${escapeHtml(item.nome_padrao)}
+          </p>
+        `;
+        const refMedio = item.preco_medio_cidade ? `Média Atibaia: R$ ${Number(item.preco_medio_cidade).toFixed(2).replace('.', ',')}` : 'Preço sob consulta';
+        const refMenor = item.menor_preco_cidade ? ` • Menor: R$ ${Number(item.menor_preco_cidade).toFixed(2).replace('.', ',')}` : '';
+        subtituloItem = `${refMedio}${refMenor}`;
+      }
 
       return `
         <div class="p-3 sm:p-4 flex items-center justify-between gap-3 hover:bg-slate-50/80 transition ${ehComprado ? 'opacity-60 bg-slate-50/50' : ''}">
           <div class="flex items-center gap-3 flex-1 min-w-0">
             <input type="checkbox" ${ehComprado ? 'checked' : ''} onchange="alternarCompradoItemLista(${item.item_id}, ${ehComprado})" class="w-5 h-5 rounded-lg text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer" />
             <div class="min-w-0 flex-1">
-              <p class="font-bold text-slate-900 text-sm truncate ${ehComprado ? 'line-through text-slate-500' : ''}">
-                ${escapeHtml(item.nome_padrao)}
-              </p>
-              <p class="text-xs text-slate-500 truncate">
-                ${refMedio}${refMenor}
+              ${tituloItem}
+              <p class="text-xs text-slate-500 truncate mt-0.5">
+                ${escapeHtml(subtituloItem)}
               </p>
             </div>
           </div>
@@ -2198,7 +2221,7 @@ function ajustarQtdAdicao(delta) {
   input.value = val;
 }
 
-// Confirmar adição de item
+// Confirmar adição de produto avulso à lista
 async function confirmarAdicaoItemLista() {
   if (!listaAtivaId || !produtoSelecionadoParaAdicao) return;
   const inputQtd = document.getElementById('input-qtd-adicao');
@@ -2225,6 +2248,255 @@ async function confirmarAdicaoItemLista() {
     }
   } catch (err) {
     alert('Erro de conexão ao adicionar produto.');
+  }
+}
+
+// ==================== MODAL: ADICIONAR CESTA FLEXÍVEL À LISTA ====================
+async function abrirModalAddCestaNaLista() {
+  if (!listaAtivaId) {
+    alert("Selecione ou crie uma lista de compras primeiro.");
+    return;
+  }
+  const modal = document.getElementById('modal-add-cesta-lista');
+  const select = document.getElementById('select-cesta-flexivel');
+  if (!modal || !select) return;
+
+  select.innerHTML = `<option value="">Carregando cestas...</option>`;
+  modal.classList.remove('hidden');
+
+  try {
+    const res = await fetch('/api/grupos');
+    const data = await res.json();
+    const grupos = data.grupos || [];
+
+    if (grupos.length === 0) {
+      select.innerHTML = `<option value="">Nenhuma cesta criada ainda. Crie uma na aba Preços.</option>`;
+      return;
+    }
+
+    select.innerHTML = grupos.map(g => `
+      <option value="${g.id}">
+        ${escapeHtml(g.nome_grupo)} (${g.total_produtos} marcas cadastradas)
+      </option>
+    `).join('');
+
+    lucide.createIcons();
+  } catch (err) {
+    select.innerHTML = `<option value="">Erro ao carregar cestas</option>`;
+  }
+}
+
+function fecharModalAddCestaNaLista() {
+  document.getElementById('modal-add-cesta-lista')?.classList.add('hidden');
+}
+
+async function confirmarAdicaoCestaNaLista() {
+  if (!listaAtivaId) return;
+  const select = document.getElementById('select-cesta-flexivel');
+  const inputQtd = document.getElementById('input-qtd-cesta-flexivel');
+  const grupoId = parseInt(select ? select.value : 0);
+  const qtd = parseFloat(inputQtd ? inputQtd.value : 1) || 1;
+
+  if (!grupoId) {
+    alert("Por favor, selecione uma cesta de comparação.");
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/listas/${listaAtivaId}/itens`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        grupo_id: grupoId,
+        quantidade: qtd
+      })
+    });
+    const data = await res.json();
+    if (data.sucesso) {
+      fecharModalAddCestaNaLista();
+      mostrarNotificacaoToast("🧺 Cesta Flexível adicionada à sua lista!");
+      await carregarDetalhesLista(listaAtivaId);
+    } else {
+      alert("Erro ao adicionar cesta: " + data.erro);
+    }
+  } catch (err) {
+    alert("Erro de conexão ao adicionar cesta flexível.");
+  }
+}
+
+// ==================== MODAL: CRIAÇÃO / ADIÇÃO RÁPIDA EM MASSA NA CESTA ====================
+let timeoutMassaBusca = null;
+let produtosEncontradosMassa = [];
+let grupoIdMassaDestino = null;
+
+function abrirModalCestaMassa(grupoId = null) {
+  grupoIdMassaDestino = grupoId;
+  const modal = document.getElementById('modal-cesta-massa');
+  const boxNome = document.getElementById('box-massa-nome-cesta');
+  const inputNome = document.getElementById('massa-cesta-nome');
+  const inputBusca = document.getElementById('massa-busca-termo');
+  const container = document.getElementById('massa-itens-container');
+
+  if (inputNome) inputNome.value = '';
+  if (inputBusca) inputBusca.value = '';
+  produtosEncontradosMassa = [];
+  atualizarContadorSelecaoMassa();
+
+  if (boxNome) {
+    if (grupoId) {
+      boxNome.classList.add('hidden');
+    } else {
+      boxNome.classList.remove('hidden');
+    }
+  }
+
+  if (container) {
+    container.innerHTML = `
+      <div class="text-center py-8 text-slate-400 text-xs">
+        Digite uma palavra-chave acima (ex: <strong>Arroz</strong>, <strong>Sabonete</strong>, <strong>Leite</strong>) para buscar e selecionar todas as marcas equivalentes em 1 clique.
+      </div>
+    `;
+  }
+
+  modal?.classList.remove('hidden');
+  lucide.createIcons();
+  if (!grupoId && inputNome) setTimeout(() => inputNome.focus(), 100);
+  else if (inputBusca) setTimeout(() => inputBusca.focus(), 100);
+}
+
+function fecharModalCestaMassa() {
+  document.getElementById('modal-cesta-massa')?.classList.add('hidden');
+  grupoIdMassaDestino = null;
+  produtosEncontradosMassa = [];
+}
+
+function buscarProdutosParaCestaMassa(termo) {
+  clearTimeout(timeoutMassaBusca);
+  const q = (termo || '').trim();
+  const container = document.getElementById('massa-itens-container');
+  if (!container) return;
+
+  if (q.length < 2) {
+    container.innerHTML = `<div class="text-center py-8 text-slate-400 text-xs">Digite pelo menos 2 letras para buscar...</div>`;
+    produtosEncontradosMassa = [];
+    atualizarContadorSelecaoMassa();
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="p-6 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+      <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-emerald-600"></div>
+      <span>Localizando todos os produtos com "${escapeHtml(q)}"...</span>
+    </div>
+  `;
+
+  timeoutMassaBusca = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/produtos/autocomplete?q=${encodeURIComponent(q)}&limite=100`);
+      const data = await res.json();
+      produtosEncontradosMassa = (data.sucesso && data.produtos) ? data.produtos : [];
+
+      if (produtosEncontradosMassa.length === 0) {
+        container.innerHTML = `<div class="p-8 text-center text-slate-500 text-xs">Nenhum produto encontrado com "${escapeHtml(q)}".</div>`;
+        atualizarContadorSelecaoMassa();
+        return;
+      }
+
+      // Preenche a lista com todos os itens marcados por padrão para agilidade!
+      container.innerHTML = produtosEncontradosMassa.map(p => {
+        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}` : '';
+        const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
+        const precosTexto = [menor, medio].filter(Boolean).join(' • ');
+
+        return `
+          <label class="p-3 bg-white hover:bg-emerald-50/50 rounded-xl border border-slate-200 transition flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" name="massa-chk-item" value="${p.id}" checked onchange="atualizarContadorSelecaoMassa()" class="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer" />
+            <div class="flex-1 min-w-0">
+              <p class="font-bold text-slate-900 text-xs truncate">${escapeHtml(p.nome_padrao)}</p>
+              <p class="text-[10px] text-slate-500 truncate">${escapeHtml(precosTexto || 'Preço registrado em Atibaia')}</p>
+            </div>
+            <span class="text-[10px] bg-slate-100 text-slate-700 font-bold px-1.5 py-0.5 rounded uppercase">
+              ${escapeHtml(p.unidade || 'UN')}
+            </span>
+          </label>
+        `;
+      }).join('');
+
+      atualizarContadorSelecaoMassa();
+      lucide.createIcons();
+    } catch (err) {
+      container.innerHTML = `<div class="p-4 text-rose-600 text-xs">Erro na busca: ${err.message}</div>`;
+    }
+  }, 150);
+}
+
+function alternarSelecaoTodosCestaMassa(selecionar) {
+  const checkboxes = document.querySelectorAll('input[name="massa-chk-item"]');
+  checkboxes.forEach(chk => {
+    chk.checked = !!selecionar;
+  });
+  atualizarContadorSelecaoMassa();
+}
+
+function atualizarContadorSelecaoMassa() {
+  const totalEl = document.getElementById('massa-total-encontrados');
+  const qtdEl = document.getElementById('massa-qtd-selecionados');
+  const checkboxes = document.querySelectorAll('input[name="massa-chk-item"]');
+  const selecionados = Array.from(checkboxes).filter(c => c.checked).length;
+
+  if (totalEl) totalEl.textContent = checkboxes.length;
+  if (qtdEl) qtdEl.textContent = selecionados;
+}
+
+async function salvarCestaMassa() {
+  const checkboxes = document.querySelectorAll('input[name="massa-chk-item"]:checked');
+  const produtoIds = Array.from(checkboxes).map(c => parseInt(c.value));
+
+  if (produtoIds.length === 0) {
+    alert("Por favor, selecione pelo menos um produto.");
+    return;
+  }
+
+  try {
+    let grupoId = grupoIdMassaDestino;
+
+    if (!grupoId) {
+      const inputNome = document.getElementById('massa-cesta-nome');
+      const nome = (inputNome ? inputNome.value : '').trim();
+      if (!nome) {
+        alert("Por favor, informe o nome da Cesta de Comparação (ex: Cesta de Sabonetes, Arroz 5kg...).");
+        inputNome?.focus();
+        return;
+      }
+
+      // Cria a cesta primeiro
+      const resGrupo = await fetch('/api/grupos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome,
+          descricao: `Criada com ${produtoIds.length} marcas equivalentes`
+        })
+      });
+      const dataGrupo = await resGrupo.json();
+      if (!dataGrupo.sucesso) throw new Error(dataGrupo.erro);
+      grupoId = dataGrupo.grupo.id;
+    }
+
+    // Adiciona todos os produtos em massa (Bulk)
+    const resBulk = await fetch(`/api/grupos/${grupoId}/produtos/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ produtoIds })
+    });
+    const dataBulk = await resBulk.json();
+    if (!dataBulk.sucesso) throw new Error(dataBulk.erro);
+
+    fecharModalCestaMassa();
+    mostrarNotificacaoToast(`✨ Cesta criada com sucesso com ${produtoIds.length} marcas!`);
+    await carregarGruposComparacao();
+  } catch (err) {
+    alert(`Erro ao salvar cesta: ${err.message}`);
   }
 }
 
@@ -2391,7 +2663,7 @@ function renderizarOtimizacao(analise) {
               <div class="p-2.5 flex items-center justify-between text-xs hover:bg-slate-50 transition">
                 <div class="min-w-0 flex-1">
                   <p class="font-semibold text-slate-800 truncate">${escapeHtml(it.nome)}</p>
-                  <p class="text-[11px] text-slate-500">${it.quantidade} ${escapeHtml(it.unidade)} x R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}</p>
+                  <p class="text-[11px] text-slate-500">${it.quantidade} ${escapeHtml(it.unidade || 'UN')} x R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}</p>
                 </div>
                 <span class="font-bold text-slate-900 ml-2">R$ ${it.subtotal.toFixed(2).replace('.', ',')}</span>
               </div>
@@ -2412,7 +2684,7 @@ function renderizarOtimizacao(analise) {
 
     thead.innerHTML = `
       <tr>
-        <th class="px-3 py-2.5">Produto</th>
+        <th class="px-3 py-2.5">Item / Cesta</th>
         <th class="px-3 py-2.5 text-center">Qtd</th>
         ${mercadosNomes.map(nm => `<th class="px-3 py-2.5 text-right whitespace-nowrap">${escapeHtml(nm)}</th>`).join('')}
         <th class="px-3 py-2.5 text-right">Média Atibaia</th>
@@ -2429,18 +2701,21 @@ function renderizarOtimizacao(analise) {
         }
         const ehMenor = dadoPreco.precoUnitario === it.menorPreco;
         const cellClass = ehMenor ? 'bg-emerald-50 text-emerald-800 font-bold' : 'text-slate-700';
+        const subtituloEscolhido = dadoPreco.produtoEscolhidoNome
+          ? `<span class="block text-[9px] font-normal text-slate-500 truncate max-w-[120px]" title="${escapeHtml(dadoPreco.produtoEscolhidoNome)}">${escapeHtml(dadoPreco.produtoEscolhidoNome)}</span>`
+          : '';
 
         return `
           <td class="px-3 py-2 text-right whitespace-nowrap ${cellClass}">
-            R$ ${dadoPreco.precoUnitario.toFixed(2).replace('.', ',')}
-            ${ehMenor ? ' ⭐' : ''}
+            <div>R$ ${dadoPreco.precoUnitario.toFixed(2).replace('.', ',')}${ehMenor ? ' ⭐' : ''}</div>
+            ${subtituloEscolhido}
           </td>
         `;
       }).join('');
 
       return `
         <tr class="hover:bg-slate-50 transition">
-          <td class="px-3 py-2 font-medium text-slate-900 max-w-[160px] truncate" title="${escapeHtml(it.nome)}">
+          <td class="px-3 py-2 font-medium text-slate-900 max-w-[170px] truncate" title="${escapeHtml(it.nome)}">
             ${escapeHtml(it.nome)}
           </td>
           <td class="px-3 py-2 text-center text-slate-500">${it.quantidade}</td>

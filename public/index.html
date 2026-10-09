@@ -348,9 +348,14 @@
 
       <!-- Barra de Busca & Adicionar Item à Lista -->
       <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-        <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
-          <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-600"></i> Adicionar Produto à Lista
-        </h3>
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+            <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-600"></i> Adicionar à Lista
+          </h3>
+          <button onclick="abrirModalAddCestaNaLista()" class="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer" title="Adicionar cesta com marcas equivalentes que escolhe o mais barato por mercado">
+            <i data-lucide="layers" class="w-3.5 h-3.5 text-emerald-700"></i> + Cesta Flexível
+          </button>
+        </div>
 
         <div class="relative">
           <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5"></i>
@@ -521,11 +526,16 @@
             <h3 class="font-bold text-slate-900 text-base flex items-center gap-2">
               <i data-lucide="layers" class="w-5 h-5 text-emerald-600"></i> Cestas de Comparação Personalizadas
             </h3>
-            <p class="text-xs text-slate-500 mt-0.5">Agrupe marcas concorrentes (ex: Sabonetes, Mussarela, Leite) para comparar e descobrir o menor preço entre elas.</p>
+            <p class="text-xs text-slate-500 mt-0.5">Agrupe marcas concorrentes (ex: Sabonetes, Arroz, Leite) para comparar e descobrir o menor preço entre elas.</p>
           </div>
-          <button onclick="abrirModalCriarGrupo()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition active:scale-95 whitespace-nowrap">
-            <i data-lucide="plus" class="w-4 h-4"></i> Criar Nova Cesta
-          </button>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button onclick="abrirModalCestaMassa()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200 transition flex items-center gap-1.5 active:scale-95 whitespace-nowrap cursor-pointer" title="Criar cesta selecionando todos os produtos por palavra-chave em 1 clique">
+              <i data-lucide="sparkles" class="w-4 h-4 text-emerald-600"></i> Criação Rápida em Massa
+            </button>
+            <button onclick="abrirModalCriarGrupo()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition active:scale-95 whitespace-nowrap cursor-pointer">
+              <i data-lucide="plus" class="w-4 h-4"></i> Criar Nova Cesta
+            </button>
+          </div>
         </div>
 
         <div id="grupos-comparacao-container" class="space-y-4">
@@ -709,6 +719,108 @@
         </button>
         <button onclick="fecharModalAddProdutoGrupo()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
           Fechar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Criação / Adição Rápida em Massa na Cesta -->
+  <div id="modal-cesta-massa" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-5 h-5 text-emerald-600"></i> Criação Rápida de Cesta em Massa
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">Selecione todas as marcas equivalentes em 1 clique (ex: Arroz, Sabonetes, Leite)</p>
+        </div>
+        <button onclick="fecharModalCestaMassa()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-4 space-y-3 bg-white border-b border-slate-100">
+        <div id="box-massa-nome-cesta">
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nome da Nova Cesta</label>
+          <input type="text" id="massa-cesta-nome" placeholder="Ex: Arroz 5kg, Sabonetes, Queijo Mussarela, Leite Integral..." class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Buscar Produtos por Palavra-chave</label>
+          <div class="relative">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
+            <input type="text" id="massa-busca-termo" oninput="buscarProdutosParaCestaMassa(this.value)" placeholder="Digite uma categoria (ex: Arroz, Sabonete, Leite, Café)..." class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition" />
+          </div>
+        </div>
+
+        <!-- Barra de Ações Rápidas de Seleção -->
+        <div class="flex items-center justify-between text-xs pt-1">
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="alternarSelecaoTodosCestaMassa(true)" class="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold rounded-lg transition cursor-pointer">
+              ✓ Selecionar Todos (<span id="massa-total-encontrados">0</span>)
+            </button>
+            <button type="button" onclick="alternarSelecaoTodosCestaMassa(false)" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium rounded-lg transition cursor-pointer">
+              Desmarcar Todos
+            </button>
+          </div>
+          <span class="text-slate-500 font-semibold"><span id="massa-qtd-selecionados" class="text-emerald-600 font-bold">0</span> selecionados</span>
+        </div>
+      </div>
+
+      <!-- Lista de Itens Encontrados com Checkboxes -->
+      <div id="massa-itens-container" class="p-4 overflow-y-auto flex-1 space-y-2">
+        <div class="text-center py-8 text-slate-400 text-xs">
+          Digite uma palavra-chave acima para buscar e selecionar produtos.
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center">
+        <button onclick="fecharModalCestaMassa()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
+          Cancelar
+        </button>
+        <button onclick="salvarCestaMassa()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-md flex items-center gap-1.5 active:scale-95 cursor-pointer">
+          <i data-lucide="check" class="w-4 h-4"></i> Concluir e Salvar Cesta
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Adicionar Cesta Flexível à Lista de Compras -->
+  <div id="modal-add-cesta-lista" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+            <i data-lucide="layers" class="w-5 h-5 text-emerald-600"></i> Adicionar Cesta Flexível
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">O sistema escolherá a marca mais barata de cada mercado</p>
+        </div>
+        <button onclick="fecharModalAddCestaNaLista()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Escolha a Cesta de Marcas</label>
+          <select id="select-cesta-flexivel" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white">
+            <!-- Preenchido via JS -->
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Quantidade</label>
+          <input type="number" id="input-qtd-cesta-flexivel" value="1" min="1" step="any" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div class="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-xs text-emerald-800 space-y-1">
+          <p class="font-bold flex items-center gap-1"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Economia Inteligente:</p>
+          <p class="text-[11px] text-slate-600">Ao adicionar a cesta, a lista calcula automaticamente qual marca está mais barata em cada supermercado de Atibaia, garantindo o menor valor real da compra!</p>
+        </div>
+      </div>
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+        <button onclick="fecharModalAddCestaNaLista()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
+          Cancelar
+        </button>
+        <button onclick="confirmarAdicaoCestaNaLista()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm cursor-pointer">
+          Adicionar à Lista
         </button>
       </div>
     </div>
@@ -900,6 +1012,6 @@
     App de Economia em Supermercados &copy; 2026 — SQLite & SEFAZ NFC-e
   </footer>
 
-  <script src="app.js?v=2.9"></script>
+  <script src="app.js?v=3.0"></script>
 </body>
 </html>
