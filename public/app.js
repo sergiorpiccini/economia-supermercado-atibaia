@@ -1937,7 +1937,7 @@ async function carregarDetalhesLista(listaId) {
   }
 }
 
-// Busca autocomplete de produtos para adicionar na lista
+// Busca autocomplete de produtos para adicionar na lista (Ultra-rápido)
 function buscarProdutosParaLista(termo) {
   clearTimeout(timeoutBuscaLista);
   const dropdown = document.getElementById('dropdown-busca-lista');
@@ -1949,9 +1949,18 @@ function buscarProdutosParaLista(termo) {
     return;
   }
 
+  // Feedback instantâneo
+  dropdown.innerHTML = `
+    <div class="p-3 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+      <div class="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-emerald-600"></div>
+      <span>Buscando "${escapeHtml(q)}"...</span>
+    </div>
+  `;
+  dropdown.classList.remove('hidden');
+
   timeoutBuscaLista = setTimeout(async () => {
     try {
-      const res = await fetch(`/api/produtos?busca=${encodeURIComponent(q)}`);
+      const res = await fetch(`/api/produtos/autocomplete?q=${encodeURIComponent(q)}`);
       const data = await res.json();
       if (!data.sucesso || !data.produtos || data.produtos.length === 0) {
         dropdown.innerHTML = `
@@ -1963,7 +1972,7 @@ function buscarProdutosParaLista(termo) {
         return;
       }
 
-      dropdown.innerHTML = data.produtos.slice(0, 10).map(p => {
+      dropdown.innerHTML = data.produtos.map(p => {
         const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}` : '';
         const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
         const precosTexto = [menor, medio].filter(Boolean).join(' • ');
@@ -1985,7 +1994,7 @@ function buscarProdutosParaLista(termo) {
     } catch (err) {
       console.error('Erro na busca de produtos:', err);
     }
-  }, 250);
+  }, 100);
 }
 
 // Selecionar produto no dropdown
