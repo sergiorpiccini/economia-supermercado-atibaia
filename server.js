@@ -397,10 +397,21 @@ app.get('/api/produtos/:id/historico', async (req, res) => {
   }
 });
 
+// Endpoint para Busca Rápida e Instantânea de Produtos (Autocomplete na Lista de Compras)
+app.get('/api/produtos/autocomplete', async (req, res) => {
+  try {
+    const q = req.query.q || req.query.busca || req.query.termo || '';
+    const produtos = await db.buscarProdutosAutocomplete(q);
+    res.json({ sucesso: true, produtos });
+  } catch (error) {
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
 // Endpoint para Listar Todos os Produtos do Catálogo
 app.get('/api/produtos', async (req, res) => {
   try {
-    const q = req.query.q || '';
+    const q = req.query.q || req.query.busca || req.query.termo || '';
     const produtos = await db.listarTodosProdutos(q);
     res.json({ sucesso: true, produtos });
   } catch (error) {

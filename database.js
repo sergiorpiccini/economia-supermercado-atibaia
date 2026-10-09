@@ -932,15 +932,49 @@ async function obterMetricasGlobais(usuarioId = null) {
   };
 }
 
-// Lista todos os produtos cadastrados com estatísticas de preço
-async function listarTodosProdutos(termoBusca = '') {
+// Busca rápida e instantânea de produtos para autocompletar na lista de compras (< 10ms)
+async function buscarProdutosAutocomplete(termo = '', limite = 15) {
+  const t = (termo || '').trim();
+  if (!t) return [];
+
+  const termoUpper = `%${t.toUpperCase()}%`;
+  const termoInicio = `${t.toUpperCase()}%`;
+
+  const sql = `
+    SELECT p.id, p.nome_padrao, p.codigo, p.unidade,
+           MIN(COALESCE(h.preco_fracionado, h.valor_unitario)) as menor_preco,
+           ROUND(AVG(COALESCE(h.preco_fracionado, h.valor_unitario)), 2) as preco_medio
+    FROM produtos p
+    LEFT JOIN historico_precos h ON p.id = h.produto_id
+    WHERE UPPER(p.nome_padrao) LIKE ? OR p.codigo LIKE ?
+    GROUP BY p.id
+    ORDER BY
+      CASE WHEN UPPER(p.nome_padrao) LIKE ? THEN 1 ELSE 2 END,
+      COUNT(h.id) DESC,
+      p.nome_padrao ASC
+    LIMIT ?
+  `;
+
+  const prods = await allQuery(sql, [termoUpper, `%${t}%`, termoInicio, limite]);
+  return prods.map(p => ({
+    id: p.id,
+    nome_padrao: p.nome_padrao,
+    codigo: p.codigo,
+    unidade: p.unidade || 'UN',
+    menor_preco: p.menor_preco ? Number(Number(p.menor_preco).toFixed(2)) : 0,
+    preco_medio: p.preco_medio ? Number(Number(p.preco_medio).toFixed(2)) : 0
+  }));
+}
+
+// Lista produtos com paginação/limite e estatísticas sem subconsultas N+1
+async function listarTodosProdutos(termoBusca = '', limite = 500) {
   let query = `
     SELECT p.id, p.nome_padrao, p.codigo, p.unidade, p.created_at,
            COUNT(DISTINCT i.compra_id) as vezes_comprado,
            COUNT(i.id) as total_itens_comprados,
            MIN(COALESCE(h.preco_fracionado, h.valor_unitario)) as menor_preco,
            MAX(COALESCE(h.preco_fracionado, h.valor_unitario)) as maior_preco,
-           AVG(COALESCE(h.preco_fracionado, h.valor_unitario)) as preco_medio
+           ROUND(AVG(COALESCE(h.preco_fracionado, h.valor_unitario)), 2) as preco_medio
     FROM produtos p
     LEFT JOIN itens_compra i ON p.id = i.produto_id
     LEFT JOIN historico_precos h ON p.id = h.produto_id
@@ -952,47 +986,26 @@ async function listarTodosProdutos(termoBusca = '') {
     params.push(t, `%${termoBusca.trim()}%`);
   }
   query += ` GROUP BY p.id ORDER BY vezes_comprado DESC, p.nome_padrao ASC`;
+  if (limite) {
+    query += ` LIMIT ?`;
+    params.push(limite);
+  }
 
   const prods = await allQuery(query, params);
 
-  const resultados = await Promise.all(prods.map(async (prod) => {
-    const ultimo = await getQuery(`
-      SELECT h.valor_unitario, h.preco_fracionado, h.data_registro,
-             COALESCE(e.nome_fantasia, e.nome) as mercado, e.endereco
-      FROM historico_precos h
-      JOIN estabelecimentos e ON h.estabelecimento_id = e.id
-      WHERE h.produto_id = ?
-      ORDER BY h.id DESC LIMIT 1
-    `, [prod.id]);
-
-    const melhor = await getQuery(`
-      SELECT h.valor_unitario, h.preco_fracionado, h.data_registro,
-             COALESCE(e.nome_fantasia, e.nome) as mercado, e.endereco
-      FROM historico_precos h
-      JOIN estabelecimentos e ON h.estabelecimento_id = e.id
-      WHERE h.produto_id = ?
-      ORDER BY COALESCE(h.preco_fracionado, h.valor_unitario) ASC, h.id DESC LIMIT 1
-    `, [prod.id]);
-
-    return {
-      id: prod.id,
-      nome_padrao: prod.nome_padrao,
-      codigo: prod.codigo,
-      unidade: prod.unidade,
-      vezes_comprado: prod.vezes_comprado || 0,
-      menor_preco: prod.menor_preco ? Number(Number(prod.menor_preco).toFixed(2)) : 0,
-      maior_preco: prod.maior_preco ? Number(Number(prod.maior_preco).toFixed(2)) : 0,
-      preco_medio: prod.preco_medio ? Number(Number(prod.preco_medio).toFixed(2)) : 0,
-      ultimo_preco: ultimo ? Number((ultimo.preco_fracionado || ultimo.valor_unitario || 0).toFixed(2)) : 0,
-      ultimo_mercado: ultimo ? ultimo.mercado : '',
-      ultimo_endereco: ultimo ? ultimo.endereco : '',
-      ultima_data: ultimo ? ultimo.data_registro : '',
-      melhor_mercado: melhor ? melhor.mercado : '',
-      melhor_endereco: melhor ? melhor.endereco : ''
-    };
+  return prods.map(prod => ({
+    id: prod.id,
+    nome_padrao: prod.nome_padrao,
+    codigo: prod.codigo,
+    unidade: prod.unidade,
+    vezes_comprado: prod.vezes_comprado || 0,
+    menor_preco: prod.menor_preco ? Number(Number(prod.menor_preco).toFixed(2)) : 0,
+    maior_preco: prod.maior_preco ? Number(Number(prod.maior_preco).toFixed(2)) : 0,
+    preco_medio: prod.preco_medio ? Number(Number(prod.preco_medio).toFixed(2)) : 0,
+    ultimo_preco: prod.menor_preco ? Number(Number(prod.menor_preco).toFixed(2)) : 0,
+    ultimo_mercado: '',
+    melhor_mercado: ''
   }));
-
-  return resultados;
 }
 
 // Criar Grupo de Comparação
@@ -1515,6 +1528,7 @@ module.exports = {
   obterMetricasGlobais,
   obterExtratoEconomia,
   listarTodosProdutos,
+  buscarProdutosAutocomplete,
   criarGrupoComparacao,
   listarGruposComparacao,
   adicionarProdutoAoGrupo,
