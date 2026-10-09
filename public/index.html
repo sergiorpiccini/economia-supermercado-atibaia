@@ -617,23 +617,28 @@
       </div>
       <div class="p-5 space-y-4">
         <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nome da Cesta / Categoria</label>
-          <input type="text" id="novo-grupo-nome" placeholder="Ex: Sabonetes do Dia a Dia, Queijo Mussarela..." class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Palavra-Chave / Nome da Cesta</label>
+          <input type="text" id="novo-grupo-nome" placeholder="Ex: Detergente, Sabonete, Arroz, Queijo Mussarela, Café..." class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
         </div>
         <div>
           <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Descrição / Observação (Opcional)</label>
-          <input type="text" id="novo-grupo-desc" placeholder="Ex: Comparar marcas Albany vs Dove vs Palmolive" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          <input type="text" id="novo-grupo-desc" placeholder="Ex: Comparar marcas do dia a dia" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
         </div>
-        <p class="text-[11px] text-slate-500 bg-emerald-50 p-2.5 rounded-lg border border-emerald-100">
-          💡 <strong>Dica:</strong> Depois de criar a cesta, você poderá adicionar os produtos que deseja comparar entre si sem alterar os dados oficiais de cada nota fiscal.
-        </p>
+        <div class="p-3 bg-emerald-50 rounded-xl border border-emerald-200/80 text-xs text-emerald-900 space-y-1.5">
+          <div class="flex items-center gap-1.5 font-bold text-emerald-800">
+            <i data-lucide="zap" class="w-4 h-4"></i> Cesta Dinâmica Inteligente
+          </div>
+          <p class="text-[11px] text-slate-600 leading-relaxed">
+            Novos produtos e promoções (inclusive <strong>packs promocionais</strong>) que entrarem no sistema serão avaliados automaticamente. Você pode bloquear qualquer marca que não gostar na <strong>Lista Negra</strong> a qualquer momento!
+          </p>
+        </div>
       </div>
       <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
-        <button onclick="fecharModalCriarGrupo()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
+        <button onclick="fecharModalCriarGrupo()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer">
           Cancelar
         </button>
-        <button onclick="salvarNovoGrupo()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm">
-          Criar Cesta
+        <button onclick="salvarNovoGrupo()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5">
+          <i data-lucide="zap" class="w-3.5 h-3.5"></i> Criar Cesta Dinâmica
         </button>
       </div>
     </div>
@@ -956,6 +961,6 @@
     App de Economia em Supermercados &copy; 2026 — SQLite & SEFAZ NFC-e
   </footer>
 
-  <script src="app.js?v=3.5"></script>
+  <script src="app.js?v=3.6"></script>
 </body>
 </html>

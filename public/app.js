@@ -1230,6 +1230,14 @@ async function carregarGruposComparacao() {
           const packObs = (p.ehPack && p.valorOriginalPack && p.qtdPack > 1) 
             ? `<span class="text-[10px] text-slate-400 block font-normal">📦 Pack c/ ${p.qtdPack} un por ${formatCurrency(p.valorOriginalPack)}</span>` 
             : '';
+          const btnExcluir = grupo.tipo_cesta === 'dinamica'
+            ? `<button onclick="bloquearMarcaCesta(${grupo.id}, ${p.id}, '${escapeHtml(p.nome_padrao).replace(/'/g, "\\'")}')" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition" title="Bloquear Marca (Adicionar à Lista Negra)">
+                <i data-lucide="ban" class="w-3.5 h-3.5"></i>
+              </button>`
+            : `<button onclick="removerProdutoDoGrupo(${grupo.id}, ${p.id})" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition" title="Remover da Cesta">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>`;
+
           return `
             <div class="flex items-center justify-between p-2.5 bg-white rounded-lg border ${ehVencedor ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200'} text-xs gap-2">
               <div class="flex-1 min-w-0">
@@ -1241,26 +1249,64 @@ async function carregarGruposComparacao() {
                   ${packObs}
                 </div>
               </div>
-              <div class="flex items-center gap-2 flex-shrink-0">
+              <div class="flex items-center gap-1.5 flex-shrink-0">
                 <button onclick="abrirHistoricoDeProduto(${p.id}, '${escapeHtml(p.nome_padrao).replace(/'/g, "\\'")}')" class="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-slate-100 rounded-md transition" title="Ver Histórico">
                   <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
                 </button>
-                <button onclick="removerProdutoDoGrupo(${grupo.id}, ${p.id})" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition" title="Remover da Cesta">
-                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                </button>
+                ${btnExcluir}
               </div>
             </div>
           `;
         }).join('');
       }
 
+      // Bloco de Lista Negra / Marcas Bloqueadas
+      let bloqueadosHtml = '';
+      if (grupo.produtos_bloqueados && grupo.produtos_bloqueados.length > 0) {
+        bloqueadosHtml = `
+          <div class="mt-2 pt-2 border-t border-slate-200/80">
+            <button onclick="alternarListaNegraCesta(${grupo.id})" class="text-[11px] font-bold text-slate-500 hover:text-rose-700 flex items-center justify-between w-full p-2 bg-slate-100/70 hover:bg-rose-50/50 rounded-lg transition cursor-pointer">
+              <span class="flex items-center gap-1.5 text-rose-700">
+                <i data-lucide="ban" class="w-3.5 h-3.5"></i>
+                Lista Negra / Marcas Bloqueadas (${grupo.produtos_bloqueados.length})
+              </span>
+              <i data-lucide="chevron-down" id="icone-lista-negra-${grupo.id}" class="w-3.5 h-3.5 transition-transform"></i>
+            </button>
+            <div id="lista-negra-container-${grupo.id}" class="hidden space-y-1.5 pt-2">
+              ${grupo.produtos_bloqueados.map(b => `
+                <div class="flex items-center justify-between p-2 bg-rose-50/60 rounded-lg border border-rose-100 text-xs gap-2">
+                  <div class="min-w-0 flex-1">
+                    <span class="font-medium text-slate-700 line-through truncate block">${escapeHtml(b.nome_padrao)}</span>
+                    <span class="text-[10px] text-rose-600 font-semibold">Bloqueado nesta cesta</span>
+                  </div>
+                  <button onclick="desbloquearMarcaCesta(${grupo.id}, ${b.id}, '${escapeHtml(b.nome_padrao).replace(/'/g, "\\'")}')" class="px-2 py-1 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded text-[11px] font-bold transition flex items-center gap-1 shrink-0 shadow-2xs">
+                    <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Reativar
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      const badgeTipo = grupo.tipo_cesta === 'dinamica'
+        ? `<span class="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1" title="Atualizada automaticamente com qualquer nova promoção ou marca em Atibaia">
+             <i data-lucide="zap" class="w-3 h-3"></i> Dinâmica
+           </span>`
+        : `<span class="text-[10px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+             <i data-lucide="pin" class="w-3 h-3"></i> Fixa
+           </span>`;
+
       card.innerHTML = `
         <div class="flex items-center justify-between border-b border-slate-200 pb-2">
           <div>
-            <h4 class="font-bold text-sm text-slate-900 flex items-center gap-1.5">
-              <i data-lucide="shopping-basket" class="w-4 h-4 text-emerald-600"></i>
-              ${escapeHtml(grupo.nome_grupo)}
-            </h4>
+            <div class="flex items-center gap-2 flex-wrap">
+              <h4 class="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                <i data-lucide="shopping-basket" class="w-4 h-4 text-emerald-600"></i>
+                ${escapeHtml(grupo.nome_grupo)}
+              </h4>
+              ${badgeTipo}
+            </div>
             ${grupo.descricao ? `<p class="text-[11px] text-slate-500 mt-0.5">${escapeHtml(grupo.descricao)}</p>` : ''}
           </div>
           <div class="flex items-center gap-1">
@@ -1280,15 +1326,16 @@ async function carregarGruposComparacao() {
             <button onclick="alternarAcordeaoCesta(${grupo.id})" id="btn-acordeao-cesta-${grupo.id}" class="w-full py-2 px-3 bg-white hover:bg-slate-100/80 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-between transition cursor-pointer shadow-2xs">
               <span class="flex items-center gap-1.5">
                 <i data-lucide="layers" class="w-3.5 h-3.5 text-emerald-600"></i>
-                Ver todas as ${grupo.produtos.length} marcas equivalentes
+                Ver todas as ${grupo.produtos.length} marcas candidatas
               </span>
               <i data-lucide="chevron-down" id="icone-acordeao-cesta-${grupo.id}" class="w-4 h-4 text-slate-400 transition-transform"></i>
             </button>
             <div id="cesta-lista-marcas-${grupo.id}" class="hidden space-y-1.5 pt-2">
               ${produtosLinhas}
+              ${bloqueadosHtml}
             </div>
           </div>
-        ` : ''}
+        ` : bloqueadosHtml}
 
         <!-- Busca Rápida Inline para Adicionar Produtos na Cesta -->
         <div class="relative pt-2 border-t border-slate-200/80">
@@ -1297,7 +1344,7 @@ async function carregarGruposComparacao() {
             <input type="text" 
                    id="cesta-busca-input-${grupo.id}" 
                    oninput="buscarProdutosParaCesta(${grupo.id}, this.value)" 
-                   placeholder="🔍 Buscar para adicionar nesta cesta (ex: Sabonete Albany, Lux, Dove, Nivea)..." 
+                   placeholder="🔍 Adicionar outra marca específica nesta cesta..." 
                    class="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none transition shadow-2xs" 
                    autocomplete="off" />
           </div>
@@ -1313,6 +1360,62 @@ async function carregarGruposComparacao() {
 
   } catch (err) {
     console.error("Erro ao carregar grupos:", err);
+  }
+}
+
+// Alternar Lista Negra da Cesta
+function alternarListaNegraCesta(grupoId) {
+  const container = document.getElementById(`lista-negra-container-${grupoId}`);
+  const icone = document.getElementById(`icone-lista-negra-${grupoId}`);
+  if (!container) return;
+  const estaOculto = container.classList.contains('hidden');
+  if (estaOculto) {
+    container.classList.remove('hidden');
+    if (icone) icone.classList.add('rotate-180');
+  } else {
+    container.classList.add('hidden');
+    if (icone) icone.classList.remove('rotate-180');
+  }
+}
+
+// Bloquear marca / Adicionar à Lista Negra
+async function bloquearMarcaCesta(grupoId, produtoId, nomeProduto) {
+  if (!confirm(`Deseja adicionar "${nomeProduto}" à Lista Negra desta cesta? Ela não será mais sugerida como menor preço.`)) return;
+  try {
+    const res = await fetch(`/api/grupos/${grupoId}/bloquear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ produtoId })
+    });
+    const data = await res.json();
+    if (data.sucesso) {
+      mostrarNotificacaoToast(`🚫 Marca adicionada à Lista Negra.`);
+      await carregarGruposComparacao();
+    } else {
+      alert('Erro: ' + data.erro);
+    }
+  } catch (err) {
+    alert('Erro de conexão ao bloquear marca.');
+  }
+}
+
+// Desbloquear marca / Reativar na Cesta
+async function desbloquearMarcaCesta(grupoId, produtoId, nomeProduto) {
+  try {
+    const res = await fetch(`/api/grupos/${grupoId}/desbloquear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ produtoId })
+    });
+    const data = await res.json();
+    if (data.sucesso) {
+      mostrarNotificacaoToast(`✅ Marca reativada na cesta.`);
+      await carregarGruposComparacao();
+    } else {
+      alert('Erro: ' + data.erro);
+    }
+  } catch (err) {
+    alert('Erro de conexão ao desbloquear marca.');
   }
 }
 
