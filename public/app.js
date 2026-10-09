@@ -2477,6 +2477,8 @@ async function confirmarAdicaoCestaNaLista() {
 let timeoutMassaBusca = null;
 let produtosEncontradosMassa = [];
 let grupoIdMassaDestino = null;
+let massaBuscaSeq = 0;
+let massaUltimaPalavraBuscada = '';
 
 // Estados dos filtros facetados do assistente de cestas
 let marcasFiltroMassa = new Set();
@@ -2490,7 +2492,7 @@ const MARCAS_SUPERMERCADO_CONHECIDAS = [
   'QUALY', 'DORIANA', 'VIGOR', 'CLAYBOM', 'BECEL', 'DELICIA', 'DELÍCIA', 'AVIACAO', 'AVIAÇÃO', 'PRESIDENT', 'PRÉSIDENT', 'ITAMBE', 'ITAMBÉ', 'TIROLEZ', 'SCALA', 'POLENGHI', 'QUATATA', 'QUATATÁ', 'DANONE', 'NESTLE', 'NESTLÉ', 'PIRACANJUBA', 'PARMALAT', 'JUSSARA', 'LEITBOM', 'NINHO', 'PAULISTA', 'ITALAC', 'ELEGE', 'ELEGÊ', 'SHEFA', 'BATAVO', 'POLLY',
   'CAMIL', 'TIO JOAO', 'TIO JOÃO', 'PRATO FINO', 'NAMORADO', 'MAXIMO', 'MÁXIMO', 'KICALDO', 'BROTO LEGAL', 'PANELA DE FERRO', 'DONA BENTA', 'SOL', 'RENATA', 'BARILLA', 'ADRIA', 'GALO', 'SANTA AMALIA', 'SANTA AMÁLIA', 'URBANO',
   'PILAO', 'PILÃO', '3 CORACOES', '3 CORAÇÕES', 'TRES CORACOES', 'MELITTA', 'CABOCLO', 'SANTA CLARA', 'FORT', 'PELE', 'PELÉ', 'UNIAO', 'UNIÃO', 'LOR', 'L\'OR', 'NESCAFE', 'NESCAFÉ', 'TODDY', 'NESKAU', 'NESCAU', 'MARATA', 'MARATÁ',
-  'SADIA', 'PERDIGAO', 'PERDIGÃO', 'SEARA', 'AURORA', 'FRIBOI', 'SWIFT', 'MATURATTA', 'COOP', 'HELLMANNS', 'HELLMANN\'S', 'HEINZ', 'FUGINI', 'QUERO', 'PREMIATO', 'POMAROLA', 'ELEFANTE', 'TARANTELA', 'LIZA', 'SOYA', 'COAMO', 'CORISCO'
+  'SADIA', 'PERDIGAO', 'PERDIGÃO', 'SEARA', 'AURORA', 'FRIBOI', 'SWIFT', 'MATURATTA', 'COOP', 'HELLMANNS', 'HEINZ', 'FUGINI', 'QUERO', 'PREMIATO', 'POMAROLA', 'ELEFANTE', 'TARANTELA', 'LIZA', 'SOYA', 'COAMO', 'CORISCO'
 ];
 
 function extrairAtributosProduto(nome, unidadePadrao = 'UN') {
@@ -2570,6 +2572,7 @@ function abrirModalCestaMassa(grupoId = null) {
   if (inputNome) inputNome.value = '';
   if (inputBusca) inputBusca.value = '';
   produtosEncontradosMassa = [];
+  massaUltimaPalavraBuscada = '';
   marcasFiltroMassa.clear();
   medidasFiltroMassa.clear();
   tiposFiltroMassa.clear();
@@ -2609,7 +2612,7 @@ function fecharModalCestaMassa() {
   produtosEncontradosMassa = [];
 }
 
-function buscarProdutosParaCestaMassa(termo) {
+function buscarProdutosParaCestaMassa(termo, imediato = false) {
   clearTimeout(timeoutMassaBusca);
   const q = (termo || '').trim();
   const container = document.getElementById('massa-itens-container');
@@ -2623,6 +2626,7 @@ function buscarProdutosParaCestaMassa(termo) {
       containerFiltros.innerHTML = '';
     }
     produtosEncontradosMassa = [];
+    massaUltimaPalavraBuscada = '';
     atualizarContadorSelecaoMassa();
     return;
   }
@@ -2634,52 +2638,72 @@ function buscarProdutosParaCestaMassa(termo) {
     inputNome.value = `Cesta de ${nomeFormatado}`;
   }
 
+  if (imediato) {
+    executarBuscaProdutosMassa(q);
+  } else {
+    timeoutMassaBusca = setTimeout(() => {
+      executarBuscaProdutosMassa(q);
+    }, 300); // 300ms de debounce para fluidez no celular
+  }
+}
+
+async function executarBuscaProdutosMassa(q) {
+  const container = document.getElementById('massa-itens-container');
+  const containerFiltros = document.getElementById('massa-filtros-facetados-container');
+  const seqAtual = ++massaBuscaSeq;
+
   container.innerHTML = `
     <div class="p-6 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
       <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-emerald-600"></div>
-      <span>Buscando todas as variações e marcas de "${escapeHtml(q)}"...</span>
+      <span>Localizando todas as marcas e variações de "${escapeHtml(q)}"...</span>
     </div>
   `;
 
-  timeoutMassaBusca = setTimeout(async () => {
-    try {
-      const res = await fetch(`/api/produtos/autocomplete?q=${encodeURIComponent(q)}&limite=150`);
-      const data = await res.json();
-      const listaProds = (data.sucesso && data.produtos) ? data.produtos : [];
+  try {
+    const res = await fetch(`/api/produtos/autocomplete?q=${encodeURIComponent(q)}&limite=150`);
+    const data = await res.json();
 
-      if (listaProds.length === 0) {
-        container.innerHTML = `<div class="p-8 text-center text-slate-500 text-xs">Nenhum produto encontrado com "${escapeHtml(q)}".</div>`;
-        if (containerFiltros) containerFiltros.classList.add('hidden');
-        produtosEncontradosMassa = [];
-        atualizarContadorSelecaoMassa();
-        return;
-      }
+    // Se uma busca mais nova já foi disparada, ignora esta resposta
+    if (seqAtual !== massaBuscaSeq) return;
 
-      // Anota atributos inteligentes para cada produto
-      produtosEncontradosMassa = listaProds.map(p => {
-        const at = extrairAtributosProduto(p.nome_padrao, p.unidade);
-        return {
-          ...p,
-          marca: at.marca,
-          medida: at.medida,
-          tipo: at.tipo,
-          selecionado: true
-        };
-      });
+    const listaProds = (data.sucesso && data.produtos) ? data.produtos : [];
 
-      // Inicializa todos os filtros como ativos
-      marcasFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.marca));
-      medidasFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.medida));
-      tiposFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.tipo));
-
-      renderizarFiltrosFacetadosMassa();
-      renderizarListaItensMassa();
+    if (listaProds.length === 0) {
+      container.innerHTML = `<div class="p-8 text-center text-slate-500 text-xs">Nenhum produto encontrado com "${escapeHtml(q)}".</div>`;
+      if (containerFiltros) containerFiltros.classList.add('hidden');
+      produtosEncontradosMassa = [];
       atualizarContadorSelecaoMassa();
-      lucide.createIcons();
-    } catch (err) {
+      return;
+    }
+
+    // Anota atributos inteligentes para cada produto
+    produtosEncontradosMassa = listaProds.map(p => {
+      const at = extrairAtributosProduto(p.nome_padrao, p.unidade);
+      return {
+        ...p,
+        marca: at.marca,
+        medida: at.medida,
+        tipo: at.tipo,
+        selecionado: true
+      };
+    });
+
+    massaUltimaPalavraBuscada = q;
+
+    // Inicializa todos os filtros como ativos
+    marcasFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.marca));
+    medidasFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.medida));
+    tiposFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.tipo));
+
+    renderizarFiltrosFacetadosMassa();
+    renderizarListaItensMassa();
+    atualizarContadorSelecaoMassa();
+    lucide.createIcons();
+  } catch (err) {
+    if (seqAtual === massaBuscaSeq) {
       container.innerHTML = `<div class="p-4 text-rose-600 text-xs">Erro na busca: ${err.message}</div>`;
     }
-  }, 120);
+  }
 }
 
 // Renderiza a barra interativa de filtros facetados (Marcas, Gramaturas, Formatos)
@@ -2704,23 +2728,23 @@ function renderizarFiltrosFacetadosMassa() {
 
   containerFiltros.innerHTML = `
     <!-- Filtro de Marcas -->
-    <div class="space-y-1.5">
+    <div class="space-y-1">
       <div class="flex items-center justify-between">
         <span class="font-bold text-slate-800 flex items-center gap-1">
           <i data-lucide="tag" class="w-3.5 h-3.5 text-emerald-600"></i>
-          Marcas Identificadas (${marcasOrdenadas.length})
+          Marcas (${marcasOrdenadas.length})
         </span>
         <div class="flex items-center gap-1.5 text-[10px]">
-          <button type="button" onclick="alternarTodasMarcasMassa(true)" class="text-emerald-700 hover:underline font-bold">Marcar Todas</button>
+          <button type="button" onclick="alternarTodasMarcasMassa(true)" class="text-emerald-700 hover:underline font-bold cursor-pointer">Marcar Todas</button>
           <span class="text-slate-300">|</span>
-          <button type="button" onclick="alternarTodasMarcasMassa(false)" class="text-slate-500 hover:underline">Desmarcar</button>
+          <button type="button" onclick="alternarTodasMarcasMassa(false)" class="text-slate-500 hover:underline cursor-pointer">Desmarcar</button>
         </div>
       </div>
-      <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+      <div class="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1">
         ${marcasOrdenadas.map(m => {
           const ativo = marcasFiltroMassa.has(m);
           return `
-            <button type="button" onclick="toggleFiltroMarcaMassa('${escapeHtml(m).replace(/'/g, "\\'")}')" class="px-2 py-1 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 border cursor-pointer ${ativo ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}">
+            <button type="button" onclick="toggleFiltroMarcaMassa('${escapeHtml(m).replace(/'/g, "\\'")}')" class="px-2 py-0.5 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 border cursor-pointer ${ativo ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}">
               <span>${escapeHtml(m)}</span>
               <span class="text-[9px] px-1 py-0.2 rounded-full ${ativo ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-100 text-slate-500'} font-bold">${contagemMarcas[m]}</span>
             </button>
@@ -2730,23 +2754,23 @@ function renderizarFiltrosFacetadosMassa() {
     </div>
 
     <!-- Filtro de Gramaturas & Volumes -->
-    <div class="space-y-1.5 pt-2 border-t border-slate-200">
+    <div class="space-y-1 pt-1.5 border-t border-slate-200">
       <div class="flex items-center justify-between">
         <span class="font-bold text-slate-800 flex items-center gap-1">
           <i data-lucide="scale" class="w-3.5 h-3.5 text-emerald-600"></i>
-          Gramaturas & Volumes (${medidasOrdenadas.length})
+          Tamanhos / Gramaturas (${medidasOrdenadas.length})
         </span>
         <div class="flex items-center gap-1.5 text-[10px]">
-          <button type="button" onclick="alternarTodasMedidasMassa(true)" class="text-emerald-700 hover:underline font-bold">Marcar Todos</button>
+          <button type="button" onclick="alternarTodasMedidasMassa(true)" class="text-emerald-700 hover:underline font-bold cursor-pointer">Marcar Todos</button>
           <span class="text-slate-300">|</span>
-          <button type="button" onclick="alternarTodasMedidasMassa(false)" class="text-slate-500 hover:underline">Desmarcar</button>
+          <button type="button" onclick="alternarTodasMedidasMassa(false)" class="text-slate-500 hover:underline cursor-pointer">Desmarcar</button>
         </div>
       </div>
-      <div class="flex flex-wrap gap-1.5">
+      <div class="flex flex-wrap gap-1 max-h-20 overflow-y-auto pr-1">
         ${medidasOrdenadas.map(med => {
           const ativo = medidasFiltroMassa.has(med);
           return `
-            <button type="button" onclick="toggleFiltroMedidaMassa('${escapeHtml(med).replace(/'/g, "\\'")}')" class="px-2 py-1 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 border cursor-pointer ${ativo ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}">
+            <button type="button" onclick="toggleFiltroMedidaMassa('${escapeHtml(med).replace(/'/g, "\\'")}')" class="px-2 py-0.5 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 border cursor-pointer ${ativo ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}">
               <span>${escapeHtml(med)}</span>
               <span class="text-[9px] px-1 py-0.2 rounded-full ${ativo ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-100 text-slate-500'} font-bold">${contagemMedidas[med]}</span>
             </button>
@@ -2757,23 +2781,23 @@ function renderizarFiltrosFacetadosMassa() {
 
     <!-- Filtro de Tipos / Formatos -->
     ${tiposOrdenados.length > 1 ? `
-      <div class="space-y-1.5 pt-2 border-t border-slate-200">
+      <div class="space-y-1 pt-1.5 border-t border-slate-200">
         <div class="flex items-center justify-between">
           <span class="font-bold text-slate-800 flex items-center gap-1">
             <i data-lucide="box" class="w-3.5 h-3.5 text-emerald-600"></i>
             Tipos & Formatos (${tiposOrdenados.length})
           </span>
           <div class="flex items-center gap-1.5 text-[10px]">
-            <button type="button" onclick="alternarTodosTiposMassa(true)" class="text-emerald-700 hover:underline font-bold">Marcar Todos</button>
+            <button type="button" onclick="alternarTodosTiposMassa(true)" class="text-emerald-700 hover:underline font-bold cursor-pointer">Marcar Todos</button>
             <span class="text-slate-300">|</span>
-            <button type="button" onclick="alternarTodosTiposMassa(false)" class="text-slate-500 hover:underline">Desmarcar</button>
+            <button type="button" onclick="alternarTodosTiposMassa(false)" class="text-slate-500 hover:underline cursor-pointer">Desmarcar</button>
           </div>
         </div>
-        <div class="flex flex-wrap gap-1.5">
+        <div class="flex flex-wrap gap-1">
           ${tiposOrdenados.map(tp => {
             const ativo = tiposFiltroMassa.has(tp);
             return `
-              <button type="button" onclick="toggleFiltroTipoMassa('${escapeHtml(tp).replace(/'/g, "\\'")}')" class="px-2 py-1 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 border cursor-pointer ${ativo ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}">
+              <button type="button" onclick="toggleFiltroTipoMassa('${escapeHtml(tp).replace(/'/g, "\\'")}')" class="px-2 py-0.5 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 border cursor-pointer ${ativo ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}">
                 <span>${escapeHtml(tp)}</span>
                 <span class="text-[9px] px-1 py-0.2 rounded-full ${ativo ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-100 text-slate-500'} font-bold">${contagemTipos[tp]}</span>
               </button>

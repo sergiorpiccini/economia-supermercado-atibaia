@@ -674,61 +674,69 @@
   </div>
 
   <!-- Modal Criação / Adição Rápida em Massa na Cesta com Filtros Inteligentes -->
-  <div id="modal-cesta-massa" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4">
-    <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
-      <div class="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+  <div id="modal-cesta-massa" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2 sm:p-4">
+    <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[95vh] sm:max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <!-- Cabeçalho -->
+      <div class="p-3.5 sm:p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50 shrink-0">
         <div>
-          <h3 class="font-bold text-base sm:text-lg text-slate-900 flex items-center gap-2">
-            <i data-lucide="sparkles" class="w-5 h-5 text-emerald-600"></i> Assistente Inteligente de Cestas
+          <h3 class="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-4 h-4 text-emerald-600"></i> Assistente Inteligente de Cestas
           </h3>
-          <p class="text-xs text-slate-500 mt-0.5">Filtre marcas, gramaturas e tipos em 1 clique para montar sua cesta perfeita</p>
+          <p class="text-[11px] text-slate-500 mt-0.5">Filtre marcas, gramaturas e tipos em 1 clique para montar sua cesta perfeita</p>
         </div>
         <button onclick="fecharModalCestaMassa()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
-      <div class="p-4 space-y-3 bg-white border-b border-slate-100 overflow-y-auto max-h-[45vh]">
+      <!-- Inputs e Filtros (Fixos no topo, sem corte) -->
+      <div class="p-3 sm:p-4 space-y-2.5 bg-white border-b border-slate-200 shrink-0">
         <div id="box-massa-nome-cesta">
-          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nome da Cesta</label>
-          <input type="text" id="massa-cesta-nome" placeholder="Ex: Sabonetes em Barra, Arroz 5kg, Queijo Mussarela, Detergente..." class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          <label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Nome da Cesta</label>
+          <input type="text" id="massa-cesta-nome" placeholder="Ex: Sabonetes em Barra, Arroz 5kg, Queijo Mussarela, Detergente..." class="w-full px-3 py-1.5 border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
         </div>
 
         <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Buscar Produtos por Palavra-chave</label>
-          <div class="relative">
-            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
-            <input type="text" id="massa-busca-termo" oninput="buscarProdutosParaCestaMassa(this.value)" placeholder="Digite o produto (ex: Sabonete, Detergente, Queijo, Arroz, Leite)..." class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition" />
+          <label class="block text-[11px] font-bold text-slate-700 uppercase mb-1">Buscar Produtos</label>
+          <div class="relative flex gap-1.5">
+            <div class="relative flex-1">
+              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+              <input type="text" id="massa-busca-termo" oninput="buscarProdutosParaCestaMassa(this.value)" onkeydown="if(event.key==='Enter') buscarProdutosParaCestaMassa(this.value, true)" placeholder="Digite o produto (ex: Sabonete, Detergente, Queijo, Arroz, Leite)..." class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition" autocomplete="off" />
+            </div>
+            <button type="button" onclick="buscarProdutosParaCestaMassa(document.getElementById('massa-busca-termo').value, true)" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs shrink-0 flex items-center gap-1 cursor-pointer">
+              <i data-lucide="search" class="w-3.5 h-3.5"></i> Buscar
+            </button>
           </div>
         </div>
 
         <!-- Container de Filtros Inteligentes Facetados (Marcas, Pesos/Volumes, Formatos) -->
-        <div id="massa-filtros-facetados-container" class="hidden space-y-2.5 p-3.5 bg-slate-50/90 border border-slate-200/90 rounded-2xl text-xs">
+        <div id="massa-filtros-facetados-container" class="hidden space-y-2 p-2.5 sm:p-3 bg-slate-50/95 border border-slate-200 rounded-xl text-xs max-h-48 overflow-y-auto">
           <!-- Preenchido dinamicamente via JS -->
         </div>
 
         <!-- Barra de Ações Rápidas de Seleção -->
-        <div class="flex items-center justify-between text-xs pt-1 flex-wrap gap-2">
+        <div class="flex items-center justify-between text-xs pt-0.5 flex-wrap gap-2">
           <div class="flex items-center gap-2">
-            <button type="button" onclick="alternarSelecaoTodosCestaMassa(true)" class="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold rounded-lg transition cursor-pointer">
+            <button type="button" onclick="alternarSelecaoTodosCestaMassa(true)" class="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold rounded-lg transition cursor-pointer text-[11px]">
               ✓ Marcar Visíveis (<span id="massa-total-encontrados">0</span>)
             </button>
-            <button type="button" onclick="alternarSelecaoTodosCestaMassa(false)" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium rounded-lg transition cursor-pointer">
+            <button type="button" onclick="alternarSelecaoTodosCestaMassa(false)" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium rounded-lg transition cursor-pointer text-[11px]">
               Desmarcar Todos
             </button>
           </div>
-          <span class="text-slate-600 font-semibold"><span id="massa-qtd-selecionados" class="text-emerald-600 font-black text-sm">0</span> produtos selecionados para esta cesta</span>
+          <span class="text-slate-600 font-semibold text-xs"><span id="massa-qtd-selecionados" class="text-emerald-600 font-black text-sm">0</span> produtos selecionados</span>
         </div>
       </div>
 
       <!-- Lista de Itens Encontrados com Checkboxes e Nomes Completos -->
-      <div id="massa-itens-container" class="p-3 sm:p-4 overflow-y-auto flex-1 space-y-2 bg-slate-50/40">
+      <div id="massa-itens-container" class="p-3 sm:p-4 overflow-y-auto flex-1 space-y-2 bg-slate-50/40 min-h-[160px]">
         <div class="text-center py-8 text-slate-400 text-xs">
           Digite uma palavra-chave acima para buscar produtos e aplicar filtros de marcas e gramaturas.
         </div>
       </div>
 
-      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center gap-2">
+      <!-- Rodapé -->
+      <div class="p-3 sm:p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center gap-2 shrink-0">
         <button onclick="fecharModalCestaMassa()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
           Cancelar
         </button>
@@ -966,6 +974,6 @@
     App de Economia em Supermercados &copy; 2026 — SQLite & SEFAZ NFC-e
   </footer>
 
-  <script src="app.js?v=3.7"></script>
+  <script src="app.js?v=3.8"></script>
 </body>
 </html>
