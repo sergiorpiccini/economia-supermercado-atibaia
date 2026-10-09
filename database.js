@@ -2,7 +2,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const crypto = require('crypto');
 const { createClient } = require('@libsql/client');
-const { extrairMedidaEPrecoNormalizado } = require('./packParser');
+const { extrairMedidaEPrecoNormalizado, classificarTamanhoDomestico } = require('./packParser');
 
 
 // Verifica se existem credenciais da nuvem (Turso / LibSQL)
@@ -1114,7 +1114,7 @@ async function listarGruposComparacao() {
       `, [g.id]);
     }
 
-    const prodsComDetalhes = await Promise.all(produtos.map(async (prod) => {
+    const prodsComDetalhesRaw = await Promise.all(produtos.map(async (prod) => {
       const hist = await allQuery(`
         SELECT h.valor_unitario, h.preco_fracionado, h.data_registro,
                COALESCE(e.nome_fantasia, e.nome) as mercado, e.endereco
@@ -1143,6 +1143,7 @@ async function listarGruposComparacao() {
         ultimoPreco: Number(precoUnitFrac.toFixed(2)),
         precoNormalizado: norm.precoNormalizado,
         tipoMedida: norm.tipoMedida,
+        quantidadeMedida: norm.quantidadeMedida,
         textoNormalizado: norm.textoNormalizado,
         ehPack: norm.ehPack,
         qtdPack: norm.qtdPack,
@@ -1154,6 +1155,11 @@ async function listarGruposComparacao() {
         totalRegistros: hist.length
       };
     }));
+
+    // Filtra tamanhos domésticos para eliminar baldes industriais (ex: 14kg)
+    const prodsComDetalhes = prodsComDetalhesRaw.filter(p => {
+      return classificarTamanhoDomestico(p.nome_padrao, p.tipoMedida, p.quantidadeMedida);
+    });
 
     // Determinar o produto "Vencedor" (menor preço ponderado por peso/medida ou unidade equivalente)
     let vencedor = null;
@@ -1175,7 +1181,7 @@ async function listarGruposComparacao() {
       tipo_cesta: ehDinamica ? 'dinamica' : 'estatica',
       termo_chave: termo,
       created_at: g.created_at,
-      total_produtos: produtos.length,
+      total_produtos: prodsComDetalhes.length,
       vencedor,
       produtos: prodsComDetalhes,
       produtos_bloqueados: exclusoesRows
@@ -1642,6 +1648,11 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
         let textoNormalizadoMercado = null;
         let prodEscolhidoMercado = null;
         let dadosEscolhido = null;
+        let normEscolhido = null;
+
+        let menorScoreAvulso = Infinity;
+        let menorPrecoAvulso = Infinity;
+        let prodAvulsoEscolhido = null;
 
         prodsCesta.forEach(p => {
           const precosP = mapaPrecos.get(p.id);
@@ -1650,9 +1661,15 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
             const pr = dp.precoFracionado || dp.preco;
             const norm = extrairMedidaEPrecoNormalizado(p.nome_padrao, p.unidade, pr);
 
+            // Filtra tamanhos industriais/atacado (ex: baldes de 14kg)
+            if (!classificarTamanhoDomestico(p.nome_padrao, norm.tipoMedida, norm.quantidadeMedida)) {
+              return;
+            }
+
             // Avalia pelo preço normalizado (R$/kg ou R$/L) se tiver peso ou volume
             const score = (norm.tipoMedida === 'KG' || norm.tipoMedida === 'L') ? norm.precoNormalizado : pr;
 
+            // Rastreia o melhor geral (que pode ser um Pack promocional)
             if (score < menorScoreMercado) {
               menorScoreMercado = score;
               menorPrecoMercado = pr;
@@ -1660,6 +1677,14 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
               textoNormalizadoMercado = norm.textoNormalizado;
               prodEscolhidoMercado = p;
               dadosEscolhido = dp;
+              normEscolhido = norm;
+            }
+
+            // Rastreia também o melhor produto estritamente avulso (não-pack)
+            if (!norm.ehPack && score < menorScoreAvulso) {
+              menorScoreAvulso = score;
+              menorPrecoAvulso = pr;
+              prodAvulsoEscolhido = p;
             }
           }
         });
@@ -1668,6 +1693,23 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
           mercadosComPreco.add(estId);
           const estInfo = mapaMercados.get(estId);
           const subtotalItem = Number((menorPrecoMercado * qtd).toFixed(2));
+          const ehPack = !!(normEscolhido && normEscolhido.ehPack);
+
+          let avisoPromocionalKit = null;
+          let opcaoAvulsa = null;
+
+          if (ehPack && normEscolhido && normEscolhido.qtdPack > 1) {
+            const nomeMercadoCurto = estInfo ? estInfo.nome : 'Supermercado';
+            avisoPromocionalKit = `💡 Preço unitário de R$ ${menorPrecoMercado.toFixed(2).replace('.', ',')} referente ao Kit com ${normEscolhido.qtdPack} un por R$ ${Number(dadosEscolhido.preco).toFixed(2).replace('.', ',')} no ${nomeMercadoCurto}`;
+            if (prodAvulsoEscolhido && prodAvulsoEscolhido.id !== prodEscolhidoMercado.id) {
+              opcaoAvulsa = {
+                produtoId: prodAvulsoEscolhido.id,
+                nome: prodAvulsoEscolhido.nome_padrao,
+                precoUnitario: menorPrecoAvulso,
+                subtotal: Number((menorPrecoAvulso * qtd).toFixed(2))
+              };
+            }
+          }
 
           precosPorEst[estId] = {
             mercadoId: estId,
@@ -1678,6 +1720,11 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
             subtotal: subtotalItem,
             produtoEscolhidoNome: prodEscolhidoMercado.nome_padrao,
             produtoEscolhidoId: prodEscolhidoMercado.id,
+            ehPack,
+            qtdPack: ehPack ? normEscolhido.qtdPack : 1,
+            valorOriginalPack: ehPack ? dadosEscolhido.preco : null,
+            avisoPromocionalKit,
+            opcaoAvulsa,
             dataRegistro: dadosEscolhido ? dadosEscolhido.dataRegistro : ''
           };
 
@@ -1693,6 +1740,7 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
       });
 
       const precoMedioItem = contPrecos > 0 ? Number((somaPrecos / contPrecos).toFixed(2)) : 0;
+      const melhorPrecoDado = melhorEstId ? precosPorEst[melhorEstId] : null;
 
       comparativoItens.push({
         itemId: item.item_id || null,
@@ -1707,8 +1755,13 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
         menorPreco: menorPrecoItem < Infinity ? menorPrecoItem : null,
         melhorMercadoId: melhorEstId,
         melhorMercadoNome: melhorEstId && mapaMercados.get(melhorEstId) ? mapaMercados.get(melhorEstId).nome : null,
-        melhorProdutoNome: melhorEstId && precosPorEst[melhorEstId] ? precosPorEst[melhorEstId].produtoEscolhidoNome : null,
-        melhorTextoNormalizado: melhorEstId && precosPorEst[melhorEstId] ? precosPorEst[melhorEstId].textoNormalizado : null,
+        melhorProdutoNome: melhorPrecoDado ? melhorPrecoDado.produtoEscolhidoNome : null,
+        melhorTextoNormalizado: melhorPrecoDado ? melhorPrecoDado.textoNormalizado : null,
+        ehPack: melhorPrecoDado ? melhorPrecoDado.ehPack : false,
+        qtdPack: melhorPrecoDado ? melhorPrecoDado.qtdPack : 1,
+        valorOriginalPack: melhorPrecoDado ? melhorPrecoDado.valorOriginalPack : null,
+        avisoPromocionalKit: melhorPrecoDado ? melhorPrecoDado.avisoPromocionalKit : null,
+        opcaoAvulsa: melhorPrecoDado ? melhorPrecoDado.opcaoAvulsa : null,
         precosPorMercado: precosPorEst
       });
 
@@ -1730,6 +1783,9 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
           precoNormalizado: norm.precoNormalizado,
           textoNormalizado: norm.textoNormalizado,
           subtotal: subtotalItem,
+          ehPack: norm.ehPack,
+          qtdPack: norm.qtdPack,
+          valorOriginalPack: norm.ehPack ? dadosPreco.preco : null,
           dataRegistro: dadosPreco.dataRegistro
         };
 
@@ -1779,6 +1835,7 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
         totalCesta += precoEst.subtotal;
         itensEncontrados++;
         detalhesItens.push({
+          itemId: item.itemId,
           produtoId: item.produtoId,
           grupoId: item.grupoId,
           ehCesta: item.ehCesta,
@@ -1787,10 +1844,16 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
           quantidade: item.quantidade,
           precoUnitario: precoEst.precoUnitario,
           subtotal: precoEst.subtotal,
+          ehPack: precoEst.ehPack || false,
+          qtdPack: precoEst.qtdPack || 1,
+          valorOriginalPack: precoEst.valorOriginalPack || null,
+          avisoPromocionalKit: precoEst.avisoPromocionalKit || null,
+          opcaoAvulsa: precoEst.opcaoAvulsa || null,
           disponivel: true
         });
       } else {
         itensFaltantes.push({
+          itemId: item.itemId,
           produtoId: item.produtoId,
           grupoId: item.grupoId,
           ehCesta: item.ehCesta,
@@ -1798,6 +1861,7 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
           quantidade: item.quantidade
         });
         detalhesItens.push({
+          itemId: item.itemId,
           produtoId: item.produtoId,
           grupoId: item.grupoId,
           ehCesta: item.ehCesta,
@@ -1857,13 +1921,20 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
       const subtotalItem = Number((precoUnit * item.quantidade).toFixed(2));
       divisaoPorMercado[mId].subtotal = Number((divisaoPorMercado[mId].subtotal + subtotalItem).toFixed(2));
       divisaoPorMercado[mId].itens.push({
+        itemId: item.itemId,
         produtoId: item.produtoId,
+        grupoId: item.grupoId,
         nome: dadoM.produtoEscolhidoNome || item.nome,
         quantidade: item.quantidade,
         unidade: item.unidade,
         precoUnitario: precoUnit,
         textoNormalizado: dadoM.textoNormalizado || item.textoNormalizado || null,
-        subtotal: subtotalItem
+        subtotal: subtotalItem,
+        ehPack: dadoM.ehPack || false,
+        qtdPack: dadoM.qtdPack || 1,
+        valorOriginalPack: dadoM.valorOriginalPack || null,
+        avisoPromocionalKit: dadoM.avisoPromocionalKit || null,
+        opcaoAvulsa: dadoM.opcaoAvulsa || null
       });
 
       totalCenarioDividido += subtotalItem;

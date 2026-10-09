@@ -244,7 +244,48 @@ function extrairMedidaEPrecoNormalizado(nomeOriginal, unidadeOriginal = 'UN', va
   return resultado;
 }
 
+/**
+ * Verifica se um produto se enquadra em tamanho de consumo doméstico ou atacado/industrial
+ */
+function classificarTamanhoDomestico(nomeProduto, tipoMedida, quantidadeMedida) {
+  const nome = (nomeProduto || '').toUpperCase();
+
+  // Termos industriais/foodservice explícitos
+  if (/\b(?:BALDE|FOOD\s*SERVICE|INSTITUCIONAL|INDUSTRIAL|SACO\s*25KG|BARRA\s*10KG|BAG\s*IN\s*BOX)\b/i.test(nome)) {
+    return false;
+  }
+
+  // Margarinas, Manteigas, Requeijão, Cremes: limite doméstico é 1.2kg (baldes de 14kg, 10kg, 5kg são industriais)
+  if (/MARGARINA|MANTEIGA|REQUEIJAO|CREME DE LEITE|LEITE CONDENSADO/i.test(nome)) {
+    if (tipoMedida === 'KG' && quantidadeMedida > 1.2) return false;
+  }
+
+  // Detergentes de louça comuns: limite doméstico unitário é 1.5L
+  if (/DETERGENTE/i.test(nome) && !/LAVA\s*ROUPAS|ROUPA/i.test(nome)) {
+    if (tipoMedida === 'L' && quantidadeMedida > 2.0 && !/PACK|KIT/i.test(nome)) return false;
+  }
+
+  // Sabonetes em barra: limite doméstico é 300g por barra
+  if (/SABONETE/i.test(nome) && !/LIQUIDO/i.test(nome)) {
+    if (tipoMedida === 'KG' && quantidadeMedida > 0.4 && !/PACK|KIT/i.test(nome)) return false;
+  }
+
+  // Queijo mussarela / prato fatiado ou pedaço: limite doméstico é 1.5kg
+  if (/QUEIJO|MUSSARELA|MOZZARELLA|PRATO/i.test(nome)) {
+    if (tipoMedida === 'KG' && quantidadeMedida > 2.0) return false;
+  }
+
+  // Geral: qualquer produto individual com mais de 5kg ou 5L que não seja arroz/feijão/açúcar/sabão em pó
+  if (!/ARROZ|FEIJAO|ACUCAR|SABAO\s*EM\s*PO|LAVA\s*ROUPAS|AMACIANTE/i.test(nome)) {
+    if ((tipoMedida === 'KG' || tipoMedida === 'L') && quantidadeMedida > 3.0) return false;
+  }
+
+  return true;
+}
+
 module.exports = {
   analisarProdutoEPack,
-  extrairMedidaEPrecoNormalizado
+  extrairMedidaEPrecoNormalizado,
+  classificarTamanhoDomestico
 };
+
