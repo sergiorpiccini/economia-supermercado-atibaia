@@ -1177,22 +1177,28 @@ async function carregarGruposComparacao() {
       const card = document.createElement('div');
       card.className = "bg-slate-50/80 border border-slate-200 rounded-xl p-4 space-y-3";
 
-      // Vencedor (mais barato da cesta)
+      // Vencedor (mais barato da cesta com medida equivalente)
       let vencedorHtml = '';
       if (grupo.vencedor) {
+        const v = grupo.vencedor;
+        const precoDisplay = formatCurrency(v.menorPreco || v.ultimoPreco);
+        const normBadge = v.textoNormalizado ? `<span class="inline-block bg-emerald-200/80 text-emerald-900 text-[10px] font-bold px-1.5 py-0.5 rounded ml-1">${escapeHtml(v.textoNormalizado)}</span>` : '';
         vencedorHtml = `
           <div class="bg-emerald-100/70 border border-emerald-200/80 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div class="flex items-center gap-2">
               <span class="text-lg">🏆</span>
               <div>
-                <span class="text-[10px] uppercase tracking-wider font-bold text-emerald-800 block">Opção Mais Barata na Cesta</span>
-                <span class="font-black text-xs text-slate-900">${escapeHtml(grupo.vencedor.nome_padrao)}</span>
-                <span class="text-[11px] text-emerald-800 block">no <strong>${escapeHtml(grupo.vencedor.melhorMercado || grupo.vencedor.ultimoMercado)}</strong> ${grupo.vencedor.melhorEndereco ? `(${escapeHtml(grupo.vencedor.melhorEndereco)})` : ''}</span>
+                <span class="text-[10px] uppercase tracking-wider font-bold text-emerald-800 block">Opção Mais Econômica na Cesta</span>
+                <span class="font-black text-xs text-slate-900">${escapeHtml(v.nome_padrao)}</span>
+                <span class="text-[11px] text-emerald-800 block">no <strong>${escapeHtml(v.melhorMercado || v.ultimoMercado)}</strong> ${v.melhorEndereco ? `(${escapeHtml(v.melhorEndereco)})` : ''}</span>
               </div>
             </div>
             <div class="text-right self-end sm:self-auto">
               <span class="text-[10px] text-emerald-700 font-semibold block">Menor Valor</span>
-              <span class="text-base font-black text-emerald-800">${formatCurrency(grupo.vencedor.menorPreco || grupo.vencedor.ultimoPreco)}</span>
+              <div class="flex items-center justify-end gap-1 flex-wrap">
+                <span class="text-base font-black text-emerald-800">${precoDisplay}</span>
+                ${normBadge}
+              </div>
             </div>
           </div>
         `;
@@ -1209,6 +1215,8 @@ async function carregarGruposComparacao() {
       if (grupo.produtos && grupo.produtos.length > 0) {
         produtosLinhas = grupo.produtos.map(p => {
           const ehVencedor = grupo.vencedor && grupo.vencedor.id === p.id;
+          const precoItem = p.menorPreco > 0 ? formatCurrency(p.menorPreco) : '--';
+          const normTexto = p.textoNormalizado ? ` <span class="text-emerald-700 font-semibold">(${escapeHtml(p.textoNormalizado)})</span>` : '';
           return `
             <div class="flex items-center justify-between p-2.5 bg-white rounded-lg border ${ehVencedor ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200'} text-xs gap-2">
               <div class="flex-1 min-w-0">
@@ -1216,7 +1224,7 @@ async function carregarGruposComparacao() {
                   ${ehVencedor ? '⭐' : ''} ${escapeHtml(p.nome_padrao)}
                 </div>
                 <div class="text-[10px] text-slate-500 mt-0.5">
-                  Menor: <strong class="text-emerald-700">${p.menorPreco > 0 ? formatCurrency(p.menorPreco) : '--'}</strong> no ${escapeHtml(p.melhorMercado || 'Mercado')}
+                  Menor: <strong class="text-emerald-700">${precoItem}</strong>${normTexto} no ${escapeHtml(p.melhorMercado || 'Mercado')}
                 </div>
               </div>
               <div class="flex items-center gap-2 flex-shrink-0">
@@ -1324,7 +1332,8 @@ function buscarProdutosParaCesta(grupoId, termo) {
       }
 
       dropdown.innerHTML = data.produtos.map(p => {
-        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}` : '';
+        const norm = p.texto_normalizado ? ` (${p.texto_normalizado})` : '';
+        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}${norm}` : '';
         const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
         const precosTexto = [menor, medio].filter(Boolean).join(' • ');
 
@@ -1533,7 +1542,8 @@ function buscarAutocompleteHistorico(termo) {
       }
 
       dropdown.innerHTML = data.produtos.map(p => {
-        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}` : '';
+        const norm = p.texto_normalizado ? ` (${p.texto_normalizado})` : '';
+        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}${norm}` : '';
         const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
         const precosTexto = [menor, medio].filter(Boolean).join(' • ');
 
@@ -2169,7 +2179,8 @@ function buscarProdutosParaLista(termo) {
       }
 
       dropdown.innerHTML = data.produtos.map(p => {
-        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}` : '';
+        const norm = p.texto_normalizado ? ` (${p.texto_normalizado})` : '';
+        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}${norm}` : '';
         const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
         const precosTexto = [menor, medio].filter(Boolean).join(' • ');
 
@@ -2404,7 +2415,8 @@ function buscarProdutosParaCestaMassa(termo) {
 
       // Preenche a lista com todos os itens marcados por padrão para agilidade!
       container.innerHTML = produtosEncontradosMassa.map(p => {
-        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}` : '';
+        const norm = p.texto_normalizado ? ` (${p.texto_normalizado})` : '';
+        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}${norm}` : '';
         const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
         const precosTexto = [menor, medio].filter(Boolean).join(' • ');
 
@@ -2659,15 +2671,18 @@ function renderizarOtimizacao(analise) {
           </div>
 
           <div class="divide-y divide-slate-100 p-2">
-            ${g.itens.map(it => `
-              <div class="p-2.5 flex items-center justify-between text-xs hover:bg-slate-50 transition">
-                <div class="min-w-0 flex-1">
-                  <p class="font-semibold text-slate-800 truncate">${escapeHtml(it.nome)}</p>
-                  <p class="text-[11px] text-slate-500">${it.quantidade} ${escapeHtml(it.unidade || 'UN')} x R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}</p>
+            ${g.itens.map(it => {
+              const normTag = it.textoNormalizado ? ` <span class="text-emerald-700 font-semibold">(${escapeHtml(it.textoNormalizado)})</span>` : '';
+              return `
+                <div class="p-2.5 flex items-center justify-between text-xs hover:bg-slate-50 transition">
+                  <div class="min-w-0 flex-1">
+                    <p class="font-semibold text-slate-800 truncate">${escapeHtml(it.nome)}</p>
+                    <p class="text-[11px] text-slate-500">${it.quantidade} ${escapeHtml(it.unidade || 'UN')} x R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}${normTag}</p>
+                  </div>
+                  <span class="font-bold text-slate-900 ml-2">R$ ${it.subtotal.toFixed(2).replace('.', ',')}</span>
                 </div>
-                <span class="font-bold text-slate-900 ml-2">R$ ${it.subtotal.toFixed(2).replace('.', ',')}</span>
-              </div>
-            `).join('')}
+              `;
+            }).join('')}
           </div>
         </div>
       `).join('');
@@ -2693,6 +2708,7 @@ function renderizarOtimizacao(analise) {
 
     tbody.innerHTML = analise.comparativoItens.map(it => {
       const precoMedioFmt = it.precoMedio ? `R$ ${it.precoMedio.toFixed(2).replace('.', ',')}` : '--';
+      const normLinha = (it.melhorTextoNormalizado || it.textoNormalizado) ? `<span class="block text-[10px] text-emerald-700 font-semibold truncate">${escapeHtml(it.melhorTextoNormalizado || it.textoNormalizado)}</span>` : '';
 
       const colunasMercados = mercadosIds.map(mId => {
         const dadoPreco = it.precosPorMercado[mId];
@@ -2704,10 +2720,12 @@ function renderizarOtimizacao(analise) {
         const subtituloEscolhido = dadoPreco.produtoEscolhidoNome
           ? `<span class="block text-[9px] font-normal text-slate-500 truncate max-w-[120px]" title="${escapeHtml(dadoPreco.produtoEscolhidoNome)}">${escapeHtml(dadoPreco.produtoEscolhidoNome)}</span>`
           : '';
+        const normCell = dadoPreco.textoNormalizado ? `<span class="block text-[9px] text-emerald-700 font-semibold">${escapeHtml(dadoPreco.textoNormalizado)}</span>` : '';
 
         return `
           <td class="px-3 py-2 text-right whitespace-nowrap ${cellClass}">
             <div>R$ ${dadoPreco.precoUnitario.toFixed(2).replace('.', ',')}${ehMenor ? ' ⭐' : ''}</div>
+            ${normCell}
             ${subtituloEscolhido}
           </td>
         `;
@@ -2717,6 +2735,7 @@ function renderizarOtimizacao(analise) {
         <tr class="hover:bg-slate-50 transition">
           <td class="px-3 py-2 font-medium text-slate-900 max-w-[170px] truncate" title="${escapeHtml(it.nome)}">
             ${escapeHtml(it.nome)}
+            ${normLinha}
           </td>
           <td class="px-3 py-2 text-center text-slate-500">${it.quantidade}</td>
           ${colunasMercados}
