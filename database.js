@@ -2,6 +2,8 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const crypto = require('crypto');
 const { createClient } = require('@libsql/client');
+const { extrairMedidaEPrecoNormalizado } = require('./packParser');
+
 
 // Verifica se existem credenciais da nuvem (Turso / LibSQL)
 const tursoUrl = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL || '';
@@ -957,14 +959,22 @@ async function buscarProdutosAutocomplete(termo = '', limite = 15) {
   `;
 
   const prods = await allQuery(sql, [termoUpper, `%${t}%`, termoInicio, limite]);
-  return prods.map(p => ({
-    id: p.id,
-    nome_padrao: p.nome_padrao,
-    codigo: p.codigo,
-    unidade: p.unidade || 'UN',
-    menor_preco: p.menor_preco ? Number(Number(p.menor_preco).toFixed(2)) : 0,
-    preco_medio: p.preco_medio ? Number(Number(p.preco_medio).toFixed(2)) : 0
-  }));
+  return prods.map(p => {
+    const menor = p.menor_preco ? Number(Number(p.menor_preco).toFixed(2)) : 0;
+    const medio = p.preco_medio ? Number(Number(p.preco_medio).toFixed(2)) : 0;
+    const norm = extrairMedidaEPrecoNormalizado(p.nome_padrao, p.unidade, menor || medio);
+    return {
+      id: p.id,
+      nome_padrao: p.nome_padrao,
+      codigo: p.codigo,
+      unidade: p.unidade || 'UN',
+      menor_preco: menor,
+      preco_medio: medio,
+      preco_normalizado: norm.precoNormalizado,
+      texto_normalizado: norm.textoNormalizado,
+      tipo_medida: norm.tipoMedida
+    };
+  });
 }
 
 // Lista produtos com paginação/limite e estatísticas sem subconsultas N+1
@@ -994,19 +1004,26 @@ async function listarTodosProdutos(termoBusca = '', limite = 500) {
 
   const prods = await allQuery(query, params);
 
-  return prods.map(prod => ({
-    id: prod.id,
-    nome_padrao: prod.nome_padrao,
-    codigo: prod.codigo,
-    unidade: prod.unidade,
-    vezes_comprado: prod.vezes_comprado || 0,
-    menor_preco: prod.menor_preco ? Number(Number(prod.menor_preco).toFixed(2)) : 0,
-    maior_preco: prod.maior_preco ? Number(Number(prod.maior_preco).toFixed(2)) : 0,
-    preco_medio: prod.preco_medio ? Number(Number(prod.preco_medio).toFixed(2)) : 0,
-    ultimo_preco: prod.menor_preco ? Number(Number(prod.menor_preco).toFixed(2)) : 0,
-    ultimo_mercado: '',
-    melhor_mercado: ''
-  }));
+  return prods.map(prod => {
+    const menor = prod.menor_preco ? Number(Number(prod.menor_preco).toFixed(2)) : 0;
+    const norm = extrairMedidaEPrecoNormalizado(prod.nome_padrao, prod.unidade, menor);
+    return {
+      id: prod.id,
+      nome_padrao: prod.nome_padrao,
+      codigo: prod.codigo,
+      unidade: prod.unidade,
+      vezes_comprado: prod.vezes_comprado || 0,
+      menor_preco: menor,
+      maior_preco: prod.maior_preco ? Number(Number(prod.maior_preco).toFixed(2)) : 0,
+      preco_medio: prod.preco_medio ? Number(Number(prod.preco_medio).toFixed(2)) : 0,
+      ultimo_preco: menor,
+      preco_normalizado: norm.precoNormalizado,
+      texto_normalizado: norm.textoNormalizado,
+      tipo_medida: norm.tipoMedida,
+      ultimo_mercado: '',
+      melhor_mercado: ''
+    };
+  });
 }
 
 // Criar Grupo de Comparação
@@ -1018,7 +1035,7 @@ async function criarGrupoComparacao(nomeGrupo, descricao = '') {
   return { id: res.id, nome_grupo: nomeGrupo.trim(), descricao };
 }
 
-// Listar Grupos de Comparação com seus produtos e o produto vencedor (mais barato)
+// Listar Grupos de Comparação com seus produtos e o produto vencedor (mais barato com base em peso/medida equivalente)
 async function listarGruposComparacao() {
   const grupos = await allQuery('SELECT * FROM grupos_comparacao ORDER BY id DESC');
   
@@ -1048,6 +1065,9 @@ async function listarGruposComparacao() {
       const ultimoPreco = ultimoRegistro ? Number((ultimoRegistro.preco_fracionado || ultimoRegistro.valor_unitario).toFixed(2)) : 0;
       const melhorRegistro = hist.find(h => Number(h.preco_fracionado || h.valor_unitario) === menorPreco);
 
+      const precoRef = ultimoPreco || menorPreco;
+      const norm = extrairMedidaEPrecoNormalizado(prod.nome_padrao, prod.unidade, precoRef);
+
       return {
         id: prod.id,
         nome_padrao: prod.nome_padrao,
@@ -1055,6 +1075,11 @@ async function listarGruposComparacao() {
         codigo: prod.codigo,
         menorPreco: Number(menorPreco.toFixed(2)),
         ultimoPreco: ultimoPreco,
+        precoNormalizado: norm.precoNormalizado,
+        tipoMedida: norm.tipoMedida,
+        textoNormalizado: norm.textoNormalizado,
+        ehPack: norm.ehPack,
+        precoFracionado: norm.precoFracionado,
         ultimoMercado: ultimoRegistro ? ultimoRegistro.mercado : '',
         melhorMercado: melhorRegistro ? melhorRegistro.mercado : (ultimoRegistro ? ultimoRegistro.mercado : ''),
         melhorEndereco: melhorRegistro ? melhorRegistro.endereco : '',
@@ -1062,14 +1087,16 @@ async function listarGruposComparacao() {
       };
     }));
 
-    // Determinar o produto "Vencedor" (menor preço dentre os cadastrados no grupo)
+    // Determinar o produto "Vencedor" (menor preço ponderado por peso/medida ou unidade equivalente)
     let vencedor = null;
     const produtosComPreco = prodsComDetalhes.filter(p => p.menorPreco > 0 || p.ultimoPreco > 0);
     if (produtosComPreco.length > 0) {
+      const temMedidaPadrao = produtosComPreco.some(p => p.tipoMedida === 'KG' || p.tipoMedida === 'L');
+
       vencedor = produtosComPreco.reduce((prev, curr) => {
-        const precoP = prev.ultimoPreco || prev.menorPreco;
-        const precoC = curr.ultimoPreco || curr.menorPreco;
-        return (precoC < precoP) ? curr : prev;
+        const scoreP = temMedidaPadrao ? (prev.precoNormalizado || prev.ultimoPreco || prev.menorPreco) : (prev.precoFracionado || prev.ultimoPreco || prev.menorPreco);
+        const scoreC = temMedidaPadrao ? (curr.precoNormalizado || curr.ultimoPreco || curr.menorPreco) : (curr.precoFracionado || curr.ultimoPreco || curr.menorPreco);
+        return (scoreC < scoreP) ? curr : prev;
       });
     }
 
@@ -1433,10 +1460,13 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
 
     if (ehCesta) {
       const prodsCesta = gruposMap.get(item.grupo_id) || [];
-      // Para cada mercado, escolhe o produto mais barato desta Cesta naquele mercado
+      // Para cada mercado, escolhe o produto com melhor custo-benefício (avaliando preço normalizado R$/kg ou R$/L)
       todosMercados.forEach(mercado => {
         const estId = mercado.id;
+        let menorScoreMercado = Infinity;
         let menorPrecoMercado = Infinity;
+        let precoNormalizadoMercado = null;
+        let textoNormalizadoMercado = null;
         let prodEscolhidoMercado = null;
         let dadosEscolhido = null;
 
@@ -1445,8 +1475,16 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
           if (precosP && precosP.has(estId)) {
             const dp = precosP.get(estId);
             const pr = dp.precoFracionado || dp.preco;
-            if (pr < menorPrecoMercado) {
+            const norm = extrairMedidaEPrecoNormalizado(p.nome_padrao, p.unidade, pr);
+
+            // Avalia pelo preço normalizado (R$/kg ou R$/L) se tiver peso ou volume
+            const score = (norm.tipoMedida === 'KG' || norm.tipoMedida === 'L') ? norm.precoNormalizado : pr;
+
+            if (score < menorScoreMercado) {
+              menorScoreMercado = score;
               menorPrecoMercado = pr;
+              precoNormalizadoMercado = norm.precoNormalizado;
+              textoNormalizadoMercado = norm.textoNormalizado;
               prodEscolhidoMercado = p;
               dadosEscolhido = dp;
             }
@@ -1462,6 +1500,8 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
             mercadoId: estId,
             mercadoNome: estInfo ? estInfo.nome : `Mercado #${estId}`,
             precoUnitario: menorPrecoMercado,
+            precoNormalizado: precoNormalizadoMercado,
+            textoNormalizado: textoNormalizadoMercado,
             subtotal: subtotalItem,
             produtoEscolhidoNome: prodEscolhidoMercado.nome_padrao,
             produtoEscolhidoId: prodEscolhidoMercado.id,
@@ -1471,8 +1511,9 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
           somaPrecos += menorPrecoMercado;
           contPrecos++;
 
-          if (menorPrecoMercado < menorPrecoItem) {
-            menorPrecoItem = menorPrecoMercado;
+          const scoreItem = precoNormalizadoMercado || menorPrecoMercado;
+          if (scoreItem < menorPrecoItem) {
+            menorPrecoItem = scoreItem;
             melhorEstId = estId;
           }
         }
@@ -1494,6 +1535,7 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
         melhorMercadoId: melhorEstId,
         melhorMercadoNome: melhorEstId && mapaMercados.get(melhorEstId) ? mapaMercados.get(melhorEstId).nome : null,
         melhorProdutoNome: melhorEstId && precosPorEst[melhorEstId] ? precosPorEst[melhorEstId].produtoEscolhidoNome : null,
+        melhorTextoNormalizado: melhorEstId && precosPorEst[melhorEstId] ? precosPorEst[melhorEstId].textoNormalizado : null,
         precosPorMercado: precosPorEst
       });
 
@@ -1505,12 +1547,15 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
         mercadosComPreco.add(estId);
         const estInfo = mapaMercados.get(estId);
         const precoUnit = dadosPreco.precoFracionado || dadosPreco.preco;
+        const norm = extrairMedidaEPrecoNormalizado(item.nome_padrao, item.unidade, precoUnit);
         const subtotalItem = Number((precoUnit * qtd).toFixed(2));
 
         precosPorEst[estId] = {
           mercadoId: estId,
           mercadoNome: estInfo ? estInfo.nome : `Mercado #${estId}`,
           precoUnitario: precoUnit,
+          precoNormalizado: norm.precoNormalizado,
+          textoNormalizado: norm.textoNormalizado,
           subtotal: subtotalItem,
           dataRegistro: dadosPreco.dataRegistro
         };
@@ -1525,6 +1570,7 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
       });
 
       const precoMedioItem = contPrecos > 0 ? Number((somaPrecos / contPrecos).toFixed(2)) : 0;
+      const normItem = extrairMedidaEPrecoNormalizado(item.nome_padrao, item.unidade, menorPrecoItem < Infinity ? menorPrecoItem : 0);
 
       comparativoItens.push({
         itemId: item.item_id || null,
@@ -1536,6 +1582,7 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
         quantidade: qtd,
         precoMedio: precoMedioItem,
         menorPreco: menorPrecoItem < Infinity ? menorPrecoItem : null,
+        textoNormalizado: normItem.textoNormalizado,
         melhorMercadoId: melhorEstId,
         melhorMercadoNome: melhorEstId && mapaMercados.get(melhorEstId) ? mapaMercados.get(melhorEstId).nome : null,
         precosPorMercado: precosPorEst
@@ -1632,15 +1679,17 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
           itens: []
         };
       }
-      const precoUnit = item.precosPorMercado[mId].precoUnitario;
+      const dadoM = item.precosPorMercado[mId];
+      const precoUnit = dadoM.precoUnitario;
       const subtotalItem = Number((precoUnit * item.quantidade).toFixed(2));
       divisaoPorMercado[mId].subtotal = Number((divisaoPorMercado[mId].subtotal + subtotalItem).toFixed(2));
       divisaoPorMercado[mId].itens.push({
         produtoId: item.produtoId,
-        nome: item.nome,
+        nome: dadoM.produtoEscolhidoNome || item.nome,
         quantidade: item.quantidade,
         unidade: item.unidade,
         precoUnitario: precoUnit,
+        textoNormalizado: dadoM.textoNormalizado || item.textoNormalizado || null,
         subtotal: subtotalItem
       });
 
