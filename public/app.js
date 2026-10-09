@@ -1206,6 +1206,12 @@ async function carregarGruposComparacao() {
             </div>
           </div>
         `;
+      } else if (grupo.produtos && grupo.produtos.length > 0) {
+        vencedorHtml = `
+          <div class="p-3 bg-amber-50 rounded-lg border border-amber-200 text-center text-xs text-amber-800">
+            Aguardando registro de preços para as ${grupo.produtos.length} marcas adicionadas nesta cesta.
+          </div>
+        `;
       } else {
         vencedorHtml = `
           <div class="p-3 bg-white rounded-lg border border-slate-200 text-center text-xs text-slate-400 italic">
