@@ -1065,21 +1065,24 @@ async function listarGruposComparacao() {
       const ultimoPreco = ultimoRegistro ? Number((ultimoRegistro.preco_fracionado || ultimoRegistro.valor_unitario).toFixed(2)) : 0;
       const melhorRegistro = hist.find(h => Number(h.preco_fracionado || h.valor_unitario) === menorPreco);
 
-      const precoRef = ultimoPreco || menorPreco;
-      const norm = extrairMedidaEPrecoNormalizado(prod.nome_padrao, prod.unidade, precoRef);
+      const rawPreco = ultimoRegistro ? Number(ultimoRegistro.valor_unitario) : (ultimoPreco || menorPreco);
+      const norm = extrairMedidaEPrecoNormalizado(prod.nome_padrao, prod.unidade, rawPreco);
+      const precoUnitFrac = norm.ehPack ? norm.precoFracionado : (ultimoPreco || menorPreco);
 
       return {
         id: prod.id,
         nome_padrao: prod.nome_padrao,
         unidade: prod.unidade,
         codigo: prod.codigo,
-        menorPreco: Number(menorPreco.toFixed(2)),
-        ultimoPreco: ultimoPreco,
+        menorPreco: Number(precoUnitFrac.toFixed(2)),
+        ultimoPreco: Number(precoUnitFrac.toFixed(2)),
         precoNormalizado: norm.precoNormalizado,
         tipoMedida: norm.tipoMedida,
         textoNormalizado: norm.textoNormalizado,
         ehPack: norm.ehPack,
+        qtdPack: norm.qtdPack,
         precoFracionado: norm.precoFracionado,
+        valorOriginalPack: norm.ehPack ? rawPreco : null,
         ultimoMercado: ultimoRegistro ? ultimoRegistro.mercado : '',
         melhorMercado: melhorRegistro ? melhorRegistro.mercado : (ultimoRegistro ? ultimoRegistro.mercado : ''),
         melhorEndereco: melhorRegistro ? melhorRegistro.endereco : '',

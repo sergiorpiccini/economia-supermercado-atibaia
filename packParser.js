@@ -16,51 +16,85 @@ function analisarProdutoEPack(nomeOriginal, quantidade = 1, valorUnitario = 0, v
     descricaoResumidaPack: null
   };
 
+  if (vUnit <= 0) return infoPack;
+
   // Padrão 1: "6X500ML", "12X350ML", "4X90G", "6X 1L", "3X80G"
   const regexNxMedida = /(\d+)\s*[X\*]\s*([\d.,]+)?\s*(ML|G|KG|L|UN|FOLHAS|M|ROLOS|CAPS)?/i;
-  // Padrão 2: "PCT C/ 6", "CX C/ 12", "C/ 6 UN", "FARDO C/ 12", "C/ 20"
-  const regexComQtd = /(?:PCT|CX|FARDO|CBO|KIT|PROMO|PACK)?\s*C\/?\s*(\d+)\s*(?:UN|UND|PCS|ROLOS|CAPS)?/i;
-  // Padrão 3: "LEVE 6 PAGUE 5", "LV6 PG5", "LV 4 PG 3"
-  const regexLevePague = /(?:LEVE|LV)\s*(\d+)\s*(?:PAGUE|PG)\s*(\d+)/i;
+  // Padrão 2: "500ML X 6", "350ML X 12 UN", "500ML X 6 UN"
+  const regexMedidaXn = /([\d.,]+)\s*(ML|G|KG|L)\s*[X\*]\s*(\d+)\s*(?:UN|UND|PCS)?/i;
+  // Padrão 3: "COM 6UN", "COM 6 UNIDADES 500ML", "C/ 6 UNIDADES", "C/ 20", "KIT COM 6UN", "PACK C/ 12"
+  const regexComQtd = /(?:KIT|PACK|FARDO|PCT|CX|CAIXA|COMBO|CBO)?\s*(?:COM|C\/|C\b)\s*(\d+)\s*(?:UNIDADES|UNIDADE|UND|UN|PCS|ROLOS|CAPS)?(?:\s*(?:DE\s*)?([\d.,]+)\s*(ML|G|KG|L))?/i;
+  // Padrão 4: "LEVE 6 PAGUE 5", "LV6 PG5", "LV 4 PG 3"
+  const regexLevePague = /(?:LEVE|LV)\s*(\d+)\s*(?:PAGUE|PG)\s*(\d+)(?:\s*(?:DE\s*)?([\d.,]+)\s*(ML|G|KG|L))?/i;
 
-  let matchPack = nome.match(regexNxMedida);
+  let matchMXn = nome.match(regexMedidaXn);
+  let matchNxM = nome.match(regexNxMedida);
   let matchCom = nome.match(regexComQtd);
   let matchLvPg = nome.match(regexLevePague);
 
-  if (matchPack && parseInt(matchPack[1]) > 1 && parseInt(matchPack[1]) <= 60) {
-    const qtdPack = parseInt(matchPack[1]);
-    const volume = matchPack[2] ? parseFloat(matchPack[2].replace(',', '.')) : null;
-    const unidade = matchPack[3] ? matchPack[3].toUpperCase() : 'UN';
+  if (matchMXn && parseInt(matchMXn[3]) > 1 && parseInt(matchMXn[3]) <= 60) {
+    const qtdPack = parseInt(matchMXn[3]);
+    const volume = parseFloat(matchMXn[1].replace(',', '.'));
+    const unidade = matchMXn[2].toUpperCase();
 
     infoPack.ehPack = true;
     infoPack.quantidadeItensNoPack = qtdPack;
     infoPack.volumePorItem = volume;
     infoPack.unidadeMedida = unidade;
     infoPack.precoPorUnidadeFracionada = Number((vUnit / qtdPack).toFixed(2));
-    
-    if (volume && (unidade === 'ML' || unidade === 'L')) {
-      const volumeEmLitros = unidade === 'ML' ? (volume / 1000) : volume;
+  } else if (matchNxM && parseInt(matchNxM[1]) > 1 && parseInt(matchNxM[1]) <= 60) {
+    const qtdPack = parseInt(matchNxM[1]);
+    const volume = matchNxM[2] ? parseFloat(matchNxM[2].replace(',', '.')) : null;
+    const unidade = matchNxM[3] ? matchNxM[3].toUpperCase() : 'UN';
+
+    infoPack.ehPack = true;
+    infoPack.quantidadeItensNoPack = qtdPack;
+    infoPack.volumePorItem = volume;
+    infoPack.unidadeMedida = unidade;
+    infoPack.precoPorUnidadeFracionada = Number((vUnit / qtdPack).toFixed(2));
+  } else if (matchCom && parseInt(matchCom[1]) > 1 && parseInt(matchCom[1]) <= 60) {
+    const qtdPack = parseInt(matchCom[1]);
+    const volume = matchCom[2] ? parseFloat(matchCom[2].replace(',', '.')) : null;
+    const unidade = matchCom[3] ? matchCom[3].toUpperCase() : 'UN';
+
+    infoPack.ehPack = true;
+    infoPack.quantidadeItensNoPack = qtdPack;
+    infoPack.volumePorItem = volume;
+    infoPack.unidadeMedida = unidade;
+    infoPack.precoPorUnidadeFracionada = Number((vUnit / qtdPack).toFixed(2));
+  } else if (matchLvPg) {
+    const qtdTotal = parseInt(matchLvPg[1]);
+    const volume = matchLvPg[3] ? parseFloat(matchLvPg[3].replace(',', '.')) : null;
+    const unidade = matchLvPg[4] ? matchLvPg[4].toUpperCase() : 'UN';
+
+    infoPack.ehPack = true;
+    infoPack.quantidadeItensNoPack = qtdTotal;
+    infoPack.volumePorItem = volume;
+    infoPack.unidadeMedida = unidade;
+    infoPack.precoPorUnidadeFracionada = Number((vUnit / qtdTotal).toFixed(2));
+  }
+
+  // Tenta extrair peso/volume do nome caso o produto seja pack mas o regex do pack não capturou o volume
+  if (infoPack.ehPack && !infoPack.volumePorItem) {
+    const matchVol = nome.match(/(\d+(?:[.,]\d+)?)\s*(ML|G|KG|L)\b/i);
+    if (matchVol) {
+      infoPack.volumePorItem = parseFloat(matchVol[1].replace(',', '.'));
+      infoPack.unidadeMedida = matchVol[2].toUpperCase();
+    }
+  }
+
+  if (infoPack.ehPack) {
+    if (infoPack.volumePorItem && (infoPack.unidadeMedida === 'ML' || infoPack.unidadeMedida === 'L')) {
+      const volumeEmLitros = infoPack.unidadeMedida === 'ML' ? (infoPack.volumePorItem / 1000) : infoPack.volumePorItem;
       const precoPorLitro = (infoPack.precoPorUnidadeFracionada / volumeEmLitros);
       infoPack.precoPorMedidaPadrao = `R$ ${precoPorLitro.toFixed(2).replace('.', ',')}/L`;
-    } else if (volume && (unidade === 'G' || unidade === 'KG')) {
-      const pesoEmKg = unidade === 'G' ? (volume / 1000) : volume;
+    } else if (infoPack.volumePorItem && (infoPack.unidadeMedida === 'G' || infoPack.unidadeMedida === 'KG')) {
+      const pesoEmKg = infoPack.unidadeMedida === 'G' ? (infoPack.volumePorItem / 1000) : infoPack.volumePorItem;
       const precoPorKg = (infoPack.precoPorUnidadeFracionada / pesoEmKg);
       infoPack.precoPorMedidaPadrao = `R$ ${precoPorKg.toFixed(2).replace('.', ',')}/kg`;
     }
 
-    infoPack.descricaoResumidaPack = `📦 Pack com ${qtdPack} un (${volume ? `${volume}${unidade}` : 'un'}) → R$ ${infoPack.precoPorUnidadeFracionada.toFixed(2).replace('.', ',')} / un`;
-  } else if (matchCom && parseInt(matchCom[1]) > 1 && parseInt(matchCom[1]) <= 60) {
-    const qtdPack = parseInt(matchCom[1]);
-    infoPack.ehPack = true;
-    infoPack.quantidadeItensNoPack = qtdPack;
-    infoPack.precoPorUnidadeFracionada = Number((vUnit / qtdPack).toFixed(2));
-    infoPack.descricaoResumidaPack = `📦 Conjunto com ${qtdPack} un → R$ ${infoPack.precoPorUnidadeFracionada.toFixed(2).replace('.', ',')} / un`;
-  } else if (matchLvPg) {
-    const qtdTotal = parseInt(matchLvPg[1]);
-    infoPack.ehPack = true;
-    infoPack.quantidadeItensNoPack = qtdTotal;
-    infoPack.precoPorUnidadeFracionada = Number((vUnit / qtdTotal).toFixed(2));
-    infoPack.descricaoResumidaPack = `🎁 Leve ${matchLvPg[1]} Pague ${matchLvPg[2]} → R$ ${infoPack.precoPorUnidadeFracionada.toFixed(2).replace('.', ',')} / un real`;
+    infoPack.descricaoResumidaPack = `📦 Pack com ${infoPack.quantidadeItensNoPack} un (${infoPack.volumePorItem ? `${infoPack.volumePorItem}${infoPack.unidadeMedida}` : 'un'}) → R$ ${infoPack.precoPorUnidadeFracionada.toFixed(2).replace('.', ',')} / un`;
   }
 
   return infoPack;
