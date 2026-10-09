@@ -1108,34 +1108,61 @@ async function listarGruposComparacao() {
         ORDER BY h.id DESC
       `, [prod.id]);
 
-      const precos = hist.map(h => Number(h.preco_fracionado || h.valor_unitario) || 0).filter(p => p > 0);
-      const menorPreco = precos.length ? Math.min(...precos) : 0;
-      const ultimoRegistro = hist.length ? hist[0] : null;
-      const ultimoPreco = ultimoRegistro ? Number((ultimoRegistro.preco_fracionado || ultimoRegistro.valor_unitario).toFixed(2)) : 0;
-      const melhorRegistro = hist.find(h => Number(h.preco_fracionado || h.valor_unitario) === menorPreco);
+      // 1. Mapear o Preço Mais Recente (Vigente) de CADA estabelecimento onde este produto foi registrado
+      const precosVigentesPorMercado = new Map();
+      hist.forEach(h => {
+        const estNome = h.mercado;
+        if (!precosVigentesPorMercado.has(estNome)) {
+          const val = Number(h.preco_fracionado || h.valor_unitario) || 0;
+          if (val > 0) {
+            precosVigentesPorMercado.set(estNome, {
+              preco: val,
+              dataRegistro: h.data_registro,
+              mercado: h.mercado,
+              endereco: h.endereco,
+              rawRow: h
+            });
+          }
+        }
+      });
 
-      const rawPreco = ultimoRegistro ? Number(ultimoRegistro.valor_unitario) : (ultimoPreco || menorPreco);
-      const norm = extrairMedidaEPrecoNormalizado(prod.nome_padrao, prod.unidade, rawPreco);
-      const precoUnitFrac = norm.ehPack ? norm.precoFracionado : (ultimoPreco || menorPreco);
+      const ofertasVigentes = Array.from(precosVigentesPorMercado.values());
+
+      // 2. Achar a Melhor Oferta Vigente Atual entre os estabelecimentos da cidade
+      let melhorOfertaVigente = null;
+      if (ofertasVigentes.length > 0) {
+        melhorOfertaVigente = ofertasVigentes.reduce((min, curr) => curr.preco < min.preco ? curr : min, ofertasVigentes[0]);
+      }
+
+      const menorPrecoVigenteRaw = melhorOfertaVigente ? melhorOfertaVigente.preco : 0;
+      const ultimoRegistro = hist.length ? hist[0] : null;
+      const ultimoPrecoRaw = ultimoRegistro ? Number((ultimoRegistro.preco_fracionado || ultimoRegistro.valor_unitario).toFixed(2)) : 0;
+
+      // Normalizações baseadas nos preços vigentes atuais
+      const normMenor = extrairMedidaEPrecoNormalizado(prod.nome_padrao, prod.unidade, menorPrecoVigenteRaw);
+      const normUltimo = extrairMedidaEPrecoNormalizado(prod.nome_padrao, prod.unidade, ultimoPrecoRaw);
+
+      const menorPrecoFinal = normMenor.ehPack ? normMenor.precoFracionado : menorPrecoVigenteRaw;
+      const ultimoPrecoFinal = normUltimo.ehPack ? normUltimo.precoFracionado : ultimoPrecoRaw;
 
       return {
         id: prod.id,
         nome_padrao: prod.nome_padrao,
         unidade: prod.unidade,
         codigo: prod.codigo,
-        menorPreco: Number(precoUnitFrac.toFixed(2)),
-        ultimoPreco: Number(precoUnitFrac.toFixed(2)),
-        precoNormalizado: norm.precoNormalizado,
-        tipoMedida: norm.tipoMedida,
-        quantidadeMedida: norm.quantidadeMedida,
-        textoNormalizado: norm.textoNormalizado,
-        ehPack: norm.ehPack,
-        qtdPack: norm.qtdPack,
-        precoFracionado: norm.precoFracionado,
-        valorOriginalPack: norm.ehPack ? rawPreco : null,
+        menorPreco: Number(menorPrecoFinal.toFixed(2)),
+        ultimoPreco: Number(ultimoPrecoFinal.toFixed(2)),
+        precoNormalizado: normMenor.precoNormalizado || normUltimo.precoNormalizado || 0,
+        tipoMedida: normMenor.tipoMedida || 'UN',
+        quantidadeMedida: normMenor.quantidadeMedida || 1,
+        textoNormalizado: normMenor.textoNormalizado || null,
+        ehPack: normMenor.ehPack,
+        qtdPack: normMenor.qtdPack,
+        precoFracionado: normMenor.precoFracionado,
+        valorOriginalPack: normMenor.ehPack ? menorPrecoVigenteRaw : null,
         ultimoMercado: ultimoRegistro ? ultimoRegistro.mercado : '',
-        melhorMercado: melhorRegistro ? melhorRegistro.mercado : (ultimoRegistro ? ultimoRegistro.mercado : ''),
-        melhorEndereco: melhorRegistro ? melhorRegistro.endereco : '',
+        melhorMercado: melhorOfertaVigente ? melhorOfertaVigente.mercado : (ultimoRegistro ? ultimoRegistro.mercado : ''),
+        melhorEndereco: melhorOfertaVigente ? melhorOfertaVigente.endereco : '',
         totalRegistros: hist.length
       };
     }));
@@ -1145,17 +1172,18 @@ async function listarGruposComparacao() {
       return classificarTamanhoDomestico(p.nome_padrao, p.tipoMedida, p.quantidadeMedida);
     });
 
+    // Ordenar produtos na cesta: do melhor custo-benefício para o mais caro
+    prodsComDetalhes.sort((a, b) => {
+      const scoreA = a.precoNormalizado > 0 ? a.precoNormalizado : (a.menorPreco > 0 ? a.menorPreco : 999999);
+      const scoreB = b.precoNormalizado > 0 ? b.precoNormalizado : (b.menorPreco > 0 ? b.menorPreco : 999999);
+      return scoreA - scoreB;
+    });
+
     // Determinar o produto "Vencedor" (menor preço ponderado por peso/medida ou unidade equivalente)
     let vencedor = null;
     const produtosComPreco = prodsComDetalhes.filter(p => p.menorPreco > 0 || p.ultimoPreco > 0);
     if (produtosComPreco.length > 0) {
-      const temMedidaPadrao = produtosComPreco.some(p => p.tipoMedida === 'KG' || p.tipoMedida === 'L');
-
-      vencedor = produtosComPreco.reduce((prev, curr) => {
-        const scoreP = temMedidaPadrao ? (prev.precoNormalizado || prev.ultimoPreco || prev.menorPreco) : (prev.precoFracionado || prev.ultimoPreco || prev.menorPreco);
-        const scoreC = temMedidaPadrao ? (curr.precoNormalizado || curr.ultimoPreco || curr.menorPreco) : (curr.precoFracionado || curr.ultimoPreco || curr.menorPreco);
-        return (scoreC < scoreP) ? curr : prev;
-      });
+      vencedor = produtosComPreco[0];
     }
 
     return {

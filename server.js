@@ -675,6 +675,59 @@ app.post('/api/admin/importar-scrapes', async (req, res) => {
   }
 });
 
+// Endpoint para Sincronização e Migração Completa do Banco Local para a Nuvem Turso
+app.post('/api/admin/sincronizar-tabelas-completas', async (req, res) => {
+  try {
+    const { estabelecimentos = [], produtos = [], historico = [] } = req.body;
+    console.log(`[Admin Sync] Recebendo carga: ${estabelecimentos.length} estabelecimentos, ${produtos.length} produtos, ${historico.length} historico_precos`);
+    
+    // 1. Inserir Estabelecimentos
+    for (const est of estabelecimentos) {
+      await db.runQuery(
+        'INSERT OR IGNORE INTO estabelecimentos (id, nome, nome_fantasia, cnpj, endereco) VALUES (?, ?, ?, ?, ?)',
+        [est.id, est.nome, est.nome_fantasia, est.cnpj, est.endereco]
+      );
+    }
+
+    // 2. Inserir Produtos
+    for (const prod of produtos) {
+      await db.runQuery(
+        'INSERT OR IGNORE INTO produtos (id, nome_padrao, codigo, unidade) VALUES (?, ?, ?, ?)',
+        [prod.id, prod.nome_padrao, prod.codigo, prod.unidade]
+      );
+    }
+
+    // Garantir compra padrão para histórico
+    let compraRef = await db.getQuery("SELECT id FROM compras WHERE url_nfce = 'SISTEMA_SCRAPE'");
+    if (!compraRef) {
+      await db.runQuery(
+        "INSERT INTO compras (id, estabelecimento_id, usuario_id, url_nfce, data_emissao, valor_total, total_itens) VALUES (9999, 1, 1, 'SISTEMA_SCRAPE', '01/01/2026 00:00:00', 0, 0)"
+      );
+      compraRef = { id: 9999 };
+    }
+
+    // 3. Inserir Histórico de Preços em Lotes
+    let inseridos = 0;
+    for (const h of historico) {
+      const cId = h.compra_id || compraRef.id;
+      await db.runQuery(
+        `INSERT OR IGNORE INTO historico_precos (id, produto_id, estabelecimento_id, compra_id, valor_unitario, preco_fracionado, data_registro)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [h.id, h.produto_id, h.estabelecimento_id, cId, h.valor_unitario, h.preco_fracionado, h.data_registro]
+      );
+      inseridos++;
+    }
+
+    res.json({
+      sucesso: true,
+      mensagem: `Sincronização concluída com sucesso: ${estabelecimentos.length} mercados, ${produtos.length} produtos e ${inseridos} registros de preços no Turso!`
+    });
+  } catch (error) {
+    console.error('[Admin Sync] Erro na sincronização:', error);
+    res.status(500).json({ sucesso: false, erro: error.message });
+  }
+});
+
 // Endpoint de teste rápido / health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
