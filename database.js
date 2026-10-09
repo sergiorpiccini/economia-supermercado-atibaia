@@ -1255,9 +1255,16 @@ async function adicionarItemListaCompras(listaId, produtoId, quantidade = 1, obs
       await runQuery("UPDATE listas_compras SET updated_at = datetime('now') WHERE id = ?", [listaId]);
       return { id: itemExistente.id, atualizado: true, novaQtd };
     }
+    // Busca um produto real da cesta para satisfazer a Foreign Key do SQLite
+    const prodRef = await getQuery(
+      'SELECT produto_id FROM itens_grupo_comparacao WHERE grupo_id = ? LIMIT 1',
+      [grupoId]
+    );
+    const prodIdReal = prodRef ? prodRef.produto_id : (produtoId || 1);
+
     const res = await runQuery(
-      'INSERT INTO itens_lista_compras (lista_id, produto_id, grupo_id, quantidade, observacao) VALUES (?, 0, ?, ?, ?)',
-      [listaId, grupoId, qtd, observacao || null]
+      'INSERT INTO itens_lista_compras (lista_id, produto_id, grupo_id, quantidade, observacao) VALUES (?, ?, ?, ?, ?)',
+      [listaId, prodIdReal, grupoId, qtd, observacao || null]
     );
     await runQuery("UPDATE listas_compras SET updated_at = datetime('now') WHERE id = ?", [listaId]);
     return { id: res.id, criado: true };
