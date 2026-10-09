@@ -1233,8 +1233,8 @@ async function adicionarProdutoAoGrupo(grupoId, produtoId) {
   return { id: res.id, sucesso: true };
 }
 
-// Adicionar múltiplos produtos a um grupo de comparação de uma só vez (Bulk Add)
-async function adicionarProdutosEmMassaAoGrupo(grupoId, produtoIds) {
+// Adicionar múltiplos produtos a um grupo de comparação de uma só vez (Bulk Add com exclusões na Lista Negra)
+async function adicionarProdutosEmMassaAoGrupo(grupoId, produtoIds, produtoIdsExcluidos = []) {
   if (!Array.isArray(produtoIds) || produtoIds.length === 0) return { inseridos: 0 };
   let inseridos = 0;
   for (const pid of produtoIds) {
@@ -1251,7 +1251,16 @@ async function adicionarProdutosEmMassaAoGrupo(grupoId, produtoIds) {
       inseridos++;
     }
   }
-  return { sucesso: true, inseridos };
+
+  // Adiciona produtos desmarcados à Lista Negra desta cesta
+  if (Array.isArray(produtoIdsExcluidos) && produtoIdsExcluidos.length > 0) {
+    for (const pidExcluido of produtoIdsExcluidos) {
+      await runQuery('DELETE FROM itens_grupo_comparacao WHERE grupo_id = ? AND produto_id = ?', [grupoId, pidExcluido]);
+      await bloquearProdutoCesta(grupoId, pidExcluido, 'Desmarcado na criação da cesta');
+    }
+  }
+
+  return { sucesso: true, inseridos, excluidos: (produtoIdsExcluidos || []).length };
 }
 
 // Remover produto de um grupo (bloqueia se dinâmico, remove se estático)

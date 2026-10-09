@@ -483,14 +483,14 @@ app.post('/api/grupos/:id/produtos', async (req, res) => {
   }
 });
 
-// Adicionar produtos em massa ao grupo (Bulk / Selecionar Todos)
+// Adicionar produtos em massa ao grupo (Bulk / Selecionar Todos com Lista Negra)
 app.post('/api/grupos/:id/produtos/bulk', async (req, res) => {
   try {
-    const { produtoIds } = req.body;
+    const { produtoIds, produtoIdsExcluidos } = req.body;
     if (!produtoIds || !Array.isArray(produtoIds) || produtoIds.length === 0) {
       return res.status(400).json({ sucesso: false, erro: 'Lista de IDs de produtos é obrigatória.' });
     }
-    const resultado = await db.adicionarProdutosEmMassaAoGrupo(req.params.id, produtoIds);
+    const resultado = await db.adicionarProdutosEmMassaAoGrupo(req.params.id, produtoIds, produtoIdsExcluidos || []);
     res.json({ sucesso: true, ...resultado });
   } catch (error) {
     res.status(500).json({ sucesso: false, erro: error.message });
