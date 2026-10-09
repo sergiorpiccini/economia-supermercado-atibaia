@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Economia Supermercado</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- HTML5 QR Code Scanner Library -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <!-- Chart.js CDN para gráficos de linha do tempo e comparativo -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- PWA e Mobile Meta Tags -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#059669" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Economia Atibaia" />
+  <link rel="stylesheet" href="style.css?v=2.5" />
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans pb-20 md:pb-6">
+
+  <!-- Header -->
+  <header class="bg-emerald-600 text-white shadow-md sticky top-0 z-40">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <i data-lucide="shopping-bag" class="w-7 h-7"></i>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight leading-none">Economia em Mercados</h1>
+          <p class="text-[11px] text-emerald-100 font-medium mt-0.5">Radar Colaborativo • Atibaia/SP</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <div id="user-header-container">
+          <!-- Renderizado via JS: Perfil do Usuário ou Botão Entrar -->
+        </div>
+        <button onclick="toggleMobileModal()" class="text-xs bg-emerald-700/80 hover:bg-emerald-800 text-emerald-100 font-semibold px-2.5 py-1.5 rounded-xl border border-emerald-500/60 flex items-center gap-1 transition" title="Acesso no Celular">
+          <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Portal de Acesso / Gatekeeper de Autenticação (Exibido para quem não está logado) -->
+  <div id="view-auth-gatekeeper" class="max-w-md mx-auto px-4 py-8 w-full space-y-6">
+    <div class="text-center space-y-2">
+      <div class="w-16 h-16 bg-emerald-600 text-white rounded-3xl flex items-center justify-center mx-auto shadow-lg shadow-emerald-600/30 mb-3">
+        <i data-lucide="shopping-bag" class="w-8 h-8"></i>
+      </div>
+      <h2 class="text-2xl font-black text-slate-900 tracking-tight">Economia em Mercados</h2>
+      <p class="text-xs text-slate-500 max-w-xs mx-auto">Rede colaborativa de preços reais e histórico de supermercados de Atibaia/SP</p>
+    </div>
+
+    <!-- Benefícios rápidos -->
+    <div class="bg-emerald-50/80 border border-emerald-200/80 rounded-2xl p-4 space-y-2 text-xs text-emerald-900">
+      <div class="flex items-center gap-2 font-medium">
+        <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+        <span>Compare preços reais de mercado em Atibaia</span>
+      </div>
+      <div class="flex items-center gap-2 font-medium">
+        <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+        <span>Histórico de compras e gastos organizado</span>
+      </div>
+      <div class="flex items-center gap-2 font-medium">
+        <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+        <span>Gráficos de evolução de preços entre mercados</span>
+      </div>
+    </div>
+
+    <!-- Card de Login / Cadastro -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="flex border-b border-slate-200 bg-slate-100/70 p-1 text-xs font-bold">
+        <button id="gatekeeper-tab-login" onclick="alternarGatekeeperTab('login')" class="flex-1 py-2.5 rounded-xl bg-white text-emerald-700 shadow-xs transition">
+          Já tenho conta (Entrar)
+        </button>
+        <button id="gatekeeper-tab-cadastro" onclick="alternarGatekeeperTab('cadastro')" class="flex-1 py-2.5 rounded-xl text-slate-600 hover:text-slate-900 transition">
+          Criar Nova Conta
+        </button>
+      </div>
+
+      <!-- Form Login -->
+      <div id="gatekeeper-form-login" class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
+          <input type="email" id="gate-login-email" placeholder="seuemail@exemplo.com" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Senha</label>
+          <input type="password" id="gate-login-senha" placeholder="Sua senha" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" onkeydown="if(event.key==='Enter') executarLoginGatekeeper()" />
+        </div>
+        <div id="gate-login-erro" class="hidden p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium"></div>
+        <button onclick="executarLoginGatekeeper()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md shadow-emerald-600/20 transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer">
+          <i data-lucide="log-in" class="w-4 h-4"></i> Entrar no App
+        </button>
+      </div>
+
+      <!-- Form Cadastro -->
+      <div id="gatekeeper-form-cadastro" class="hidden p-6 space-y-3.5">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Seu Nome / Apelido</label>
+          <input type="text" id="gate-cad-nome" placeholder="Ex: Mariana, Lucas..." class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
+          <input type="email" id="gate-cad-email" placeholder="seuemail@exemplo.com" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Bairro em Atibaia</label>
+          <input type="text" id="gate-cad-bairro" placeholder="Ex: Alvinópolis, Lucas, Centro, Portão..." class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Criar Senha</label>
+          <input type="password" id="gate-cad-senha" placeholder="Mínimo 4 caracteres" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" onkeydown="if(event.key==='Enter') executarCadastroGatekeeper()" />
+        </div>
+        <div id="gate-cad-erro" class="hidden p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium"></div>
+        <button onclick="executarCadastroGatekeeper()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md shadow-emerald-600/20 transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer">
+          <i data-lucide="user-plus" class="w-4 h-4"></i> Criar Conta & Começar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conteúdo Autenticado do App (Oculto se deslogado) -->
+  <div id="main-app-content" class="hidden flex-1 flex flex-col">
+    <!-- Navegação Principal (Abas Superiores) -->
+    <nav class="bg-white border-b border-slate-200 sticky top-[57px] z-30 shadow-xs">
+      <div class="max-w-4xl mx-auto px-2 sm:px-4 flex overflow-x-auto no-scrollbar">
+        <button onclick="navigateView('scanner')" id="nav-scanner" class="nav-tab flex-1 min-w-[100px] py-3 text-center font-bold text-xs sm:text-sm text-emerald-600 border-b-2 border-emerald-600 flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="scan-line" class="w-4 h-4"></i> <span>Escanear</span>
+        </button>
+        <button onclick="navigateView('lista')" id="nav-lista" class="nav-tab flex-1 min-w-[120px] py-3 text-center font-medium text-xs sm:text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="list-checks" class="w-4 h-4"></i> <span>Otimizador Lista</span>
+        </button>
+        <button onclick="navigateView('historico')" id="nav-historico" class="nav-tab flex-1 min-w-[110px] py-3 text-center font-medium text-xs sm:text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="trending-down" class="w-4 h-4"></i> <span>Preços & Cestas</span>
+        </button>
+        <button onclick="navigateView('compras')" id="nav-compras" class="nav-tab flex-1 min-w-[110px] py-3 text-center font-medium text-xs sm:text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="receipt" class="w-4 h-4"></i> <span>Minhas Compras</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Main Container -->
+    <main class="max-w-4xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+
+      <!-- ==================== TELA 1: ESCANEAR NOTA ==================== -->
+      <div id="view-scanner" class="space-y-6">
+      
+      <!-- Card Principal de Captura Rápida (Foco no Celular) -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-6 sm:p-8 text-center space-y-4">
+        <div class="border-2 border-dashed border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50 rounded-2xl p-8 sm:p-12 text-center transition cursor-pointer active:scale-98" onclick="document.getElementById('file-input').click()">
+          <input type="file" id="file-input" accept="image/*" capture="environment" class="hidden" onchange="handleFileUpload(event)" />
+          <div class="w-20 h-20 bg-emerald-600 hover:bg-emerald-700 text-white rounded-3xl flex items-center justify-center mx-auto shadow-lg shadow-emerald-600/25 mb-4 transition transform group-hover:scale-105">
+            <i data-lucide="camera" class="w-10 h-10"></i>
+          </div>
+          <p class="font-black text-lg sm:text-xl text-slate-900">Escanear / Tirar Foto do Cupom Fiscal</p>
+          <p class="text-xs sm:text-sm text-slate-500 mt-1 max-w-sm mx-auto">Toque para abrir a câmera do celular com leitura instantânea do QR Code da NFC-e</p>
+        </div>
+        <div id="file-reader-container" class="hidden max-w-sm mx-auto"></div>
+      </div>
+
+      <!-- Status & Loader -->
+      <div id="status-card" class="hidden bg-white p-6 rounded-2xl shadow-sm border border-slate-200 text-center space-y-3">
+        <div class="flex justify-center">
+          <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600"></div>
+        </div>
+        <p id="status-message" class="text-sm font-medium text-slate-700">Consultando SEFAZ e extraindo dados da nota...</p>
+      </div>
+
+      <!-- Mensagem de Erro -->
+      <div id="error-card" class="hidden bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-start gap-3">
+        <i data-lucide="alert-circle" class="w-5 h-5 text-rose-600 mt-0.5 flex-shrink-0"></i>
+        <div class="flex-1 text-sm">
+          <p class="font-bold" id="error-title">Erro na extração</p>
+          <p id="error-desc" class="text-rose-700 text-xs mt-0.5"></p>
+        </div>
+      </div>
+
+      <!-- Resultados da Extração -->
+      <div id="results-card" class="hidden space-y-6">
+        
+        <!-- Resumo do Estabelecimento, Total e Ações -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                <i data-lucide="store" class="w-3 h-3"></i> Supermercado
+              </span>
+              <span class="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                <i data-lucide="shield-check" class="w-3 h-3 text-emerald-600"></i> Oficial NFC-e (Imutável)
+              </span>
+            </div>
+            <h2 id="res-mercado" class="text-xl font-black text-slate-900 mt-1">Supermercado Exemplo</h2>
+            <div id="res-mercado-sub" class="space-y-0.5"></div>
+            <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 pt-1">
+              <span id="res-cnpj">CNPJ: --</span>
+              <span id="res-data">Data: --</span>
+            </div>
+          </div>
+          <div class="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+            <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 sm:p-4 text-right min-w-[160px] w-full sm:w-auto">
+              <span class="text-xs text-emerald-800 font-medium">Valor Total da Nota</span>
+              <div id="res-total" class="text-2xl font-black text-emerald-700">R$ 0,00</div>
+              <span id="res-qtd-itens" class="text-xs text-slate-500">0 itens encontrados</span>
+            </div>
+            <button id="btn-salvar-compra" onclick="salvarCompraAtual()" class="w-full sm:w-auto px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2 transition active:scale-95">
+              <i data-lucide="check-circle" class="w-5 h-5"></i> Salvar Compra
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabela / Lista de Itens -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <i data-lucide="list" class="w-5 h-5 text-emerald-600"></i>
+              <h3 class="font-bold text-slate-800">Itens Extraídos</h3>
+            </div>
+            <button onclick="copiarJson()" class="text-xs font-medium text-slate-600 hover:text-emerald-600 flex items-center gap-1 border border-slate-200 rounded-lg px-2.5 py-1.5 hover:bg-slate-50 transition">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i> Copiar JSON
+            </button>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead class="bg-slate-50 text-slate-500 text-xs font-semibold uppercase border-b border-slate-200">
+                <tr>
+                  <th class="px-4 py-3">#</th>
+                  <th class="px-4 py-3">Item / Descrição</th>
+                  <th class="px-4 py-3 text-center">Qtd</th>
+                  <th class="px-4 py-3 text-right">Vl. Unitário</th>
+                  <th class="px-4 py-3 text-right">Vl. Total</th>
+                </tr>
+              </thead>
+              <tbody id="res-itens-table" class="divide-y divide-slate-100">
+                <!-- Linhas inseridas via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Inspecionar Resposta Técnica / Debug -->
+        <div class="bg-slate-900 text-slate-200 rounded-2xl p-4 shadow-sm border border-slate-800">
+          <button onclick="toggleDebug()" class="w-full flex items-center justify-between text-xs font-mono text-slate-400 hover:text-slate-100">
+            <span>🔍 Ver Dados Brutos (JSON de Extração)</span>
+            <i id="debug-chevron" data-lucide="chevron-down" class="w-4 h-4"></i>
+          </button>
+          <pre id="debug-json" class="hidden mt-3 p-3 bg-slate-950 rounded-lg text-xs font-mono overflow-x-auto text-emerald-400 max-h-60"></pre>
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- ==================== TELA 4: OTIMIZADOR DE LISTA DE COMPRAS ==================== -->
+    <div id="view-lista" class="hidden space-y-6">
+
+      <!-- Header & Seletor de Lista -->
+      <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="space-y-1">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+              <i data-lucide="sparkles" class="w-3 h-3"></i> Inteligência de Preços
+            </span>
+            <span id="lista-progresso-badge" class="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+              0 itens
+            </span>
+          </div>
+          <div class="flex items-center gap-2 mt-1">
+            <select id="select-listas-usuario" onchange="selecionarListaAtiva(this.value)" class="font-black text-slate-900 text-lg sm:text-xl bg-transparent border-0 border-b border-dashed border-slate-300 focus:outline-none focus:border-emerald-500 cursor-pointer py-0.5">
+              <!-- Preenchido via JS -->
+            </select>
+          </div>
+          <p class="text-xs text-slate-500">Compare sua cesta nos mercados de Atibaia e descubra a melhor combinação</p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button onclick="gerarListaComMaisComprados()" class="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl border border-emerald-200 transition flex items-center gap-1.5 active:scale-95" title="Criar lista sugerida com seus produtos mais comprados">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-emerald-600"></i> Sugerir Frequentes
+          </button>
+          <button onclick="abrirModalNovaLista()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 active:scale-95">
+            <i data-lucide="plus" class="w-4 h-4"></i> Nova Lista
+          </button>
+          <button onclick="excluirListaAtual()" class="p-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl transition" title="Excluir Lista">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Barra de Busca & Adicionar Item à Lista -->
+      <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+            <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-600"></i> Adicionar à Lista
+          </h3>
+          <button onclick="abrirModalAddCestaNaLista()" class="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer" title="Adicionar cesta com marcas equivalentes que escolhe o mais barato por mercado">
+            <i data-lucide="layers" class="w-3.5 h-3.5 text-emerald-700"></i> + Cesta Flexível
+          </button>
+        </div>
+
+        <div class="relative">
+          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5"></i>
+          <input type="text" id="input-busca-lista" oninput="buscarProdutosParaLista(this.value)" placeholder="Digite o nome do produto (ex: arroz, café, leite, sabonete, queijo...)" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition" />
+          
+          <!-- Dropdown Autocomplete de Resultados -->
+          <div id="dropdown-busca-lista" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-64 overflow-y-auto divide-y divide-slate-100">
+            <!-- Renderizado via JS -->
+          </div>
+        </div>
+
+        <!-- Seletor de Quantidade do Produto Selecionado -->
+        <div id="box-produto-selecionado-lista" class="hidden bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="space-y-0.5">
+            <p id="sel-produto-nome" class="font-bold text-slate-900 text-sm">Nome do Produto</p>
+            <p id="sel-produto-ref" class="text-xs text-emerald-800">Menor preço atual: R$ -- | Média: R$ --</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex items-center border border-slate-300 rounded-xl bg-white overflow-hidden">
+              <button onclick="ajustarQtdAdicao(-1)" class="px-3 py-1.5 text-slate-600 hover:bg-slate-100 font-bold transition">-</button>
+              <input type="number" id="input-qtd-adicao" value="1" min="0.1" step="any" class="w-16 text-center text-sm font-bold border-0 focus:outline-none" />
+              <button onclick="ajustarQtdAdicao(1)" class="px-3 py-1.5 text-slate-600 hover:bg-slate-100 font-bold transition">+</button>
+            </div>
+            <button onclick="confirmarAdicaoItemLista()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition active:scale-95">
+              Adicionar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid Principal: Itens da Lista vs Otimizador -->
+      <div class="space-y-6">
+
+        <!-- Itens da Lista de Compras -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div class="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <i data-lucide="shopping-cart" class="w-4 h-4 text-emerald-600"></i>
+              <h3 class="font-bold text-sm text-slate-800">Itens na Lista (<span id="lista-qtd-total">0</span>)</h3>
+            </div>
+            <div class="text-xs text-slate-500 font-medium">
+              Marque o check ao pegar no carrinho
+            </div>
+          </div>
+
+          <div id="lista-itens-container" class="divide-y divide-slate-100 p-2">
+            <!-- Preenchido via JS -->
+          </div>
+        </div>
+
+        <!-- Otimizador de Cesta & Comparador de Mercados -->
+        <div id="box-otimizador-cesta" class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-4 p-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h3 class="font-black text-base text-slate-900 flex items-center gap-2">
+                <i data-lucide="calculator" class="w-5 h-5 text-emerald-600"></i> Radar de Economia da Lista
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">Calculado em tempo real com os preços registrados em Atibaia/SP</p>
+            </div>
+
+            <!-- Sub-abas do Otimizador -->
+            <div class="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600">
+              <button id="tab-otim-monomercado" onclick="alternarAbaOtimizador('monomercado')" class="px-3 py-1.5 rounded-lg bg-white text-emerald-700 shadow-xs font-bold transition">
+                Tudo em 1 Lugar
+              </button>
+              <button id="tab-otim-dividido" onclick="alternarAbaOtimizador('dividido')" class="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition">
+                ⚡ Divisão Econômica
+              </button>
+              <button id="tab-otim-matriz" onclick="alternarAbaOtimizador('matriz')" class="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition">
+                📊 Matriz de Preços
+              </button>
+            </div>
+          </div>
+
+          <!-- Conteúdo 1: Cenário Monomercado -->
+          <div id="otim-conteudo-monomercado" class="space-y-4">
+            <div id="ranking-mercados-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <!-- Renderizado via JS -->
+            </div>
+          </div>
+
+          <!-- Conteúdo 2: Cenário Dividido Inteligente -->
+          <div id="otim-conteudo-dividido" class="hidden space-y-4">
+            <div id="cenario-dividido-banner" class="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-5 rounded-2xl shadow-sm">
+              <!-- Preenchido via JS -->
+            </div>
+            <div id="cenario-dividido-grupos" class="space-y-4">
+              <!-- Preenchido via JS -->
+            </div>
+          </div>
+
+          <!-- Conteúdo 3: Matriz de Preços Item a Item -->
+          <div id="otim-conteudo-matriz" class="hidden space-y-4">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead id="matriz-precos-thead" class="bg-slate-50 text-slate-500 font-semibold uppercase border-b border-slate-200">
+                  <!-- Colunas inseridas via JS -->
+                </thead>
+                <tbody id="matriz-precos-tbody" class="divide-y divide-slate-100">
+                  <!-- Linhas inseridas via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- ==================== TELA 2: MINHAS COMPRAS SALVAS ==================== -->
+    <div id="view-compras" class="hidden space-y-6">
+      <div class="flex items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
+        <div>
+          <h2 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <i data-lucide="receipt" class="w-5 h-5 text-emerald-600"></i> Minhas Compras Salvas
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">Suas notas fiscais e comprovantes escaneados (exclusivo da sua conta)</p>
+        </div>
+        <button onclick="carregarComprasSalvas()" class="p-2 text-slate-600 hover:text-emerald-600 bg-slate-50 border border-slate-200 rounded-xl shadow-xs transition" title="Atualizar">
+          <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div id="compras-lista-container" class="space-y-4">
+        <!-- Renderizado dinamicamente via JS -->
+      </div>
+    </div>
+
+
+    <!-- ==================== TELA 3: PREÇOS & ECONOMIA ==================== -->
+    <div id="view-historico" class="hidden space-y-6">
+      
+      <!-- Cards de Métricas Gerais -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div onclick="abrirModalExtratoEconomia()" class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-400 hover:shadow-md transition cursor-pointer active:scale-98 group" title="Clique para ver o Extrato Detalhado de Economia">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-500 font-medium">Economia Total</span>
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-emerald-500 group-hover:scale-110 transition"></i>
+          </div>
+          <div id="stat-economia" class="text-xl font-black text-emerald-600 mt-1">R$ 0,00</div>
+          <p class="text-[10px] text-emerald-600 font-semibold mt-0.5 flex items-center gap-1">Ver extrato item a item &rarr;</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+          <span class="text-xs text-slate-500 font-medium">Total de Compras</span>
+          <div id="stat-compras" class="text-xl font-black text-slate-900 mt-1">0</div>
+        </div>
+        <div onclick="abrirModalCatalogoProdutos()" class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-400 hover:shadow-md transition cursor-pointer active:scale-98 group">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-500 font-medium">Produtos Cadastrados</span>
+            <i data-lucide="external-link" class="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 transition"></i>
+          </div>
+          <div id="stat-produtos" class="text-xl font-black text-slate-900 mt-1">0</div>
+          <p class="text-[10px] text-emerald-600 font-semibold mt-0.5 flex items-center gap-1">Ver todos produtos &rarr;</p>
+        </div>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+          <span class="text-xs text-slate-500 font-medium">Mercados Registrados</span>
+          <div id="stat-mercados" class="text-xl font-black text-slate-900 mt-1">0</div>
+        </div>
+      </div>
+
+      <!-- Seção: Grupos de Comparação Personalizados (Cestas de Marcas) -->
+      <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h3 class="font-bold text-slate-900 text-base flex items-center gap-2">
+              <i data-lucide="layers" class="w-5 h-5 text-emerald-600"></i> Cestas de Comparação Personalizadas
+            </h3>
+            <p class="text-xs text-slate-500 mt-0.5">Agrupe marcas concorrentes (ex: Sabonetes, Arroz, Leite) para comparar e descobrir o menor preço entre elas.</p>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button onclick="abrirModalCestaMassa()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200 transition flex items-center gap-1.5 active:scale-95 whitespace-nowrap cursor-pointer" title="Criar cesta selecionando todos os produtos por palavra-chave em 1 clique">
+              <i data-lucide="sparkles" class="w-4 h-4 text-emerald-600"></i> Criação Rápida em Massa
+            </button>
+            <button onclick="abrirModalCriarGrupo()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition active:scale-95 whitespace-nowrap cursor-pointer">
+              <i data-lucide="plus" class="w-4 h-4"></i> Criar Nova Cesta
+            </button>
+          </div>
+        </div>
+
+        <div id="grupos-comparacao-container" class="space-y-4">
+          <!-- Renderizado via JS -->
+        </div>
+      </div>
+
+      <!-- Comparador & Busca de Produto -->
+      <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div>
+          <h3 class="font-bold text-slate-800 flex items-center gap-2">
+            <i data-lucide="search" class="w-5 h-5 text-emerald-600"></i> Consultar Histórico de Produto Individual
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">Digite qualquer produto (ex: Sabonete, Café, Arroz, Leite) para ver o gráfico e a lista completa de marcas/versões.</p>
+        </div>
+        <div class="relative">
+          <div class="flex gap-2">
+            <input type="text" id="busca-produto-input" oninput="buscarAutocompleteHistorico(this.value)" onkeydown="if(event.key==='Enter') buscarHistoricoProduto()" placeholder="Digite o nome de um produto (ex: Sabonete, Café, Arroz)..." class="flex-1 px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm" autocomplete="off" />
+            <button onclick="buscarHistoricoProduto()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl shadow-sm flex items-center gap-2 transition active:scale-95">
+              <i data-lucide="search" class="w-4 h-4"></i> Buscar
+            </button>
+          </div>
+          <!-- Dropdown autocomplete de busca de histórico -->
+          <div id="dropdown-busca-historico" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-72 overflow-y-auto z-40 divide-y divide-slate-100">
+          </div>
+        </div>
+
+        <!-- Resultado da Busca do Produto -->
+        <div id="busca-produto-resultado" class="hidden mt-4 pt-4 border-t border-slate-100 space-y-4">
+          <!-- Detalhes preenchidos via JS -->
+        </div>
+      </div>
+
+      <!-- Top Produtos Mais Comprados -->
+      <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h3 class="font-bold text-slate-800 flex items-center gap-2">
+              <i data-lucide="trending-up" class="w-5 h-5 text-emerald-600"></i> Produtos Mais Frequentes
+            </h3>
+            <p class="text-xs text-slate-500 mt-0.5">Adicione rapidamente itens do seu hábito de consumo à sua lista de compras.</p>
+          </div>
+          <button onclick="gerarListaComMaisComprados()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95 whitespace-nowrap cursor-pointer">
+            <i data-lucide="sparkles" class="w-4 h-4"></i> Criar Lista com Estes Itens
+          </button>
+        </div>
+        <div id="top-produtos-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          <!-- Renderizado via JS -->
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+  </div> <!-- Fim de #main-app-content -->
+
+  <!-- Modal Catálogo Completo de Produtos -->
+  <div id="catalogo-produtos-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 class="font-bold text-lg text-slate-900 flex items-center gap-2">
+            <i data-lucide="package-search" class="w-5 h-5 text-emerald-600"></i> Catálogo Completo de Produtos
+          </h3>
+          <p id="catalogo-total-sub" class="text-xs text-slate-500 mt-0.5">Todos os itens extraídos de notas fiscais</p>
+        </div>
+        <button onclick="fecharModalCatalogo()" class="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Barra de Filtro do Catálogo -->
+      <div class="p-4 border-b border-slate-100 bg-white">
+        <div class="relative">
+          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
+          <input type="text" id="catalogo-filtro-input" oninput="filtrarCatalogoProdutos(this.value)" placeholder="Filtrar por nome do produto ou código..." class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition" />
+        </div>
+      </div>
+
+      <!-- Lista do Catálogo -->
+      <div class="p-4 overflow-y-auto flex-1 space-y-3" id="catalogo-itens-container">
+        <!-- Renderizado dinamicamente -->
+      </div>
+
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center text-xs text-slate-500">
+        <span id="catalogo-stats-rodape">Carregando produtos...</span>
+        <button onclick="fecharModalCatalogo()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl transition">
+          Fechar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Criar Nova Lista de Compras -->
+  <div id="nova-lista-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-emerald-600"></i> Nova Lista de Compras
+        </h3>
+        <button onclick="fecharModalNovaLista()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nome da Lista</label>
+          <input type="text" id="nova-lista-nome-input" placeholder="Ex: Compras do Mês, Churrasco de Domingo, Feira..." class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" onkeydown="if(event.key==='Enter') salvarNovaLista()" />
+        </div>
+        <p class="text-[11px] text-slate-500 bg-emerald-50 p-2.5 rounded-lg border border-emerald-100">
+          💡 <strong>Dica:</strong> Você pode ter múltiplas listas para simular e comparar preços antes de sair às compras.
+        </p>
+      </div>
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+        <button onclick="fecharModalNovaLista()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
+          Cancelar
+        </button>
+        <button onclick="salvarNovaLista()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm">
+          Criar Lista
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Criar Cesta / Grupo de Comparação -->
+  <div id="criar-grupo-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-emerald-600"></i> Nova Cesta de Comparação
+        </h3>
+        <button onclick="fecharModalCriarGrupo()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Palavra-Chave / Nome da Cesta</label>
+          <input type="text" id="novo-grupo-nome" placeholder="Ex: Detergente, Sabonete, Arroz, Queijo Mussarela, Café..." class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Descrição / Observação (Opcional)</label>
+          <input type="text" id="novo-grupo-desc" placeholder="Ex: Comparar marcas do dia a dia" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div class="p-3 bg-emerald-50 rounded-xl border border-emerald-200/80 text-xs text-emerald-900 space-y-1.5">
+          <div class="flex items-center gap-1.5 font-bold text-emerald-800">
+            <i data-lucide="zap" class="w-4 h-4"></i> Cesta Dinâmica Inteligente
+          </div>
+          <p class="text-[11px] text-slate-600 leading-relaxed">
+            Novos produtos e promoções (inclusive <strong>packs promocionais</strong>) que entrarem no sistema serão avaliados automaticamente. Você pode bloquear qualquer marca que não gostar na <strong>Lista Negra</strong> a qualquer momento!
+          </p>
+        </div>
+      </div>
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+        <button onclick="fecharModalCriarGrupo()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer">
+          Cancelar
+        </button>
+        <button onclick="salvarNovoGrupo()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5">
+          <i data-lucide="zap" class="w-3.5 h-3.5"></i> Criar Cesta Dinâmica
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Adicionar Produto a uma Cesta -->
+  <div id="add-produto-grupo-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 class="font-bold text-base text-slate-900">Adicionar à Cesta de Comparação</h3>
+          <p id="add-modal-produto-nome" class="text-xs text-slate-500 mt-0.5 truncate font-medium">Produto selecionado</p>
+        </div>
+        <button onclick="fecharModalAddProdutoGrupo()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-3">
+        <label class="block text-xs font-bold text-slate-700 uppercase">Escolha a Cesta de Destino:</label>
+        <div id="add-modal-grupos-lista" class="space-y-2 max-h-60 overflow-y-auto">
+          <!-- Renderizado via JS -->
+        </div>
+      </div>
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center">
+        <button onclick="fecharModalAddProdutoGrupo(); abrirModalCriarGrupo();" class="text-xs text-emerald-700 font-bold hover:underline flex items-center gap-1">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nova Cesta
+        </button>
+        <button onclick="fecharModalAddProdutoGrupo()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
+          Fechar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Criação / Adição Rápida em Massa na Cesta -->
+  <div id="modal-cesta-massa" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-5 h-5 text-emerald-600"></i> Criação Rápida de Cesta em Massa
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">Selecione todas as marcas equivalentes em 1 clique (ex: Arroz, Sabonetes, Leite)</p>
+        </div>
+        <button onclick="fecharModalCestaMassa()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-4 space-y-3 bg-white border-b border-slate-100">
+        <div id="box-massa-nome-cesta">
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nome da Nova Cesta</label>
+          <input type="text" id="massa-cesta-nome" placeholder="Ex: Arroz 5kg, Sabonetes, Queijo Mussarela, Leite Integral..." class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Buscar Produtos por Palavra-chave</label>
+          <div class="relative">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-3"></i>
+            <input type="text" id="massa-busca-termo" oninput="buscarProdutosParaCestaMassa(this.value)" placeholder="Digite uma categoria (ex: Arroz, Sabonete, Leite, Café)..." class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition" />
+          </div>
+        </div>
+
+        <!-- Barra de Ações Rápidas de Seleção -->
+        <div class="flex items-center justify-between text-xs pt-1">
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="alternarSelecaoTodosCestaMassa(true)" class="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold rounded-lg transition cursor-pointer">
+              ✓ Selecionar Todos (<span id="massa-total-encontrados">0</span>)
+            </button>
+            <button type="button" onclick="alternarSelecaoTodosCestaMassa(false)" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium rounded-lg transition cursor-pointer">
+              Desmarcar Todos
+            </button>
+          </div>
+          <span class="text-slate-500 font-semibold"><span id="massa-qtd-selecionados" class="text-emerald-600 font-bold">0</span> selecionados</span>
+        </div>
+      </div>
+
+      <!-- Lista de Itens Encontrados com Checkboxes -->
+      <div id="massa-itens-container" class="p-4 overflow-y-auto flex-1 space-y-2">
+        <div class="text-center py-8 text-slate-400 text-xs">
+          Digite uma palavra-chave acima para buscar e selecionar produtos.
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center">
+        <button onclick="fecharModalCestaMassa()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
+          Cancelar
+        </button>
+        <button onclick="salvarCestaMassa()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-md flex items-center gap-1.5 active:scale-95 cursor-pointer">
+          <i data-lucide="check" class="w-4 h-4"></i> Concluir e Salvar Cesta
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Adicionar Cesta Flexível à Lista de Compras -->
+  <div id="modal-add-cesta-lista" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+            <i data-lucide="layers" class="w-5 h-5 text-emerald-600"></i> Adicionar Cesta Flexível
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">O sistema escolherá a marca mais barata de cada mercado</p>
+        </div>
+        <button onclick="fecharModalAddCestaNaLista()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Escolha a Cesta de Marcas</label>
+          <select id="select-cesta-flexivel" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white">
+            <!-- Preenchido via JS -->
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Quantidade</label>
+          <input type="number" id="input-qtd-cesta-flexivel" value="1" min="1" step="any" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+        </div>
+        <div class="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-xs text-emerald-800 space-y-1">
+          <p class="font-bold flex items-center gap-1"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Economia Inteligente:</p>
+          <p class="text-[11px] text-slate-600">Ao adicionar a cesta, a lista calcula automaticamente qual marca está mais barata em cada supermercado de Atibaia, garantindo o menor valor real da compra!</p>
+        </div>
+      </div>
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+        <button onclick="fecharModalAddCestaNaLista()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition">
+          Cancelar
+        </button>
+        <button onclick="confirmarAdicaoCestaNaLista()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm cursor-pointer">
+          Adicionar à Lista
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Detalhes da Compra -->
+  <div id="detalhes-compra-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 id="modal-compra-titulo" class="font-bold text-lg text-slate-900">Detalhes da Compra</h3>
+          <p id="modal-compra-sub" class="text-xs text-slate-500 mt-0.5">--</p>
+        </div>
+        <button onclick="fecharModalDetalhes()" class="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1 space-y-4">
+        <!-- Banner de Economia da Compra -->
+        <div id="modal-compra-economia-banner" class="hidden p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center justify-between font-medium">
+          <div class="flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+            <span id="modal-compra-economia-texto">Você economizou nesta compra!</span>
+          </div>
+          <span id="modal-compra-economia-badge" class="bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold text-xs">--</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-50 text-slate-500 text-xs font-semibold uppercase border-b border-slate-200">
+              <tr>
+                <th class="px-4 py-2">Item</th>
+                <th class="px-4 py-2 text-center">Qtd</th>
+                <th class="px-4 py-2 text-right">Vl. Unit</th>
+                <th class="px-4 py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody id="modal-itens-table" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center">
+        <span id="modal-compra-total" class="font-bold text-slate-900 text-base">Total: R$ 0,00</span>
+        <button onclick="fecharModalDetalhes()" class="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl text-sm transition">
+          Fechar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Extrato Detalhado de Economia -->
+  <div id="extrato-economia-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <h3 class="font-bold text-lg text-slate-900 flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-5 h-5 text-emerald-600"></i> Extrato Detalhado de Economia
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">Comparações reais item a item contra o preço médio praticado em Atibaia/SP</p>
+        </div>
+        <button onclick="fecharModalExtratoEconomia()" class="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-6 overflow-y-auto flex-1 space-y-4">
+        <!-- Banner Resumo de Economia -->
+        <div class="bg-emerald-600 text-white p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span class="text-xs text-emerald-100 font-medium">Economia Total Acumulada</span>
+            <div id="extrato-total-destaque" class="text-2xl font-black mt-0.5">R$ 0,00</div>
+            <p id="extrato-itens-sub" class="text-xs text-emerald-100 mt-1">Calculado em 0 itens abaixo da média</p>
+          </div>
+          <div class="bg-emerald-700/80 px-4 py-2.5 rounded-xl border border-emerald-500/60 text-xs max-w-xs">
+            💡 <strong>Como é calculado:</strong> Sempre que você paga menos que o preço médio do produto na cidade, a diferença multiplicada pela quantidade é somada aqui.
+          </div>
+        </div>
+
+        <!-- Tabela / Lista de Itens do Extrato -->
+        <div id="extrato-itens-container" class="space-y-3">
+          <!-- Renderizado dinamicamente via JS -->
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end">
+        <button onclick="fecharModalExtratoEconomia()" class="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl text-sm transition">
+          Fechar Extrato
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Autenticação / Login / Cadastro -->
+  <div id="auth-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+      <!-- Header do Modal de Auth -->
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div class="flex items-center gap-2">
+          <div class="w-9 h-9 bg-emerald-100 text-emerald-700 rounded-xl flex items-center justify-center font-black">
+            <i data-lucide="user" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 id="auth-modal-titulo" class="font-bold text-base text-slate-900">Minha Conta</h3>
+            <p id="auth-modal-sub" class="text-[11px] text-slate-500">Acesse para salvar suas notas em Atibaia</p>
+          </div>
+        </div>
+        <button onclick="fecharModalAuth()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Sessão Ativa (Exibida se já estiver logado) -->
+      <div id="auth-sessao-ativa" class="hidden p-6 space-y-4 text-center">
+        <div class="w-16 h-16 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto text-2xl font-black">
+          👤
+        </div>
+        <div>
+          <h4 id="auth-usuario-nome" class="font-bold text-lg text-slate-900">Nome do Usuário</h4>
+          <p id="auth-usuario-email" class="text-xs text-slate-500 mt-0.5">email@exemplo.com</p>
+          <span id="auth-usuario-bairro" class="inline-block mt-2 text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full font-semibold">Bairro</span>
+        </div>
+        <div class="pt-2 border-t border-slate-100 flex gap-2">
+          <button onclick="fecharModalAuth()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition">
+            Continuar Navegando
+          </button>
+          <button onclick="executarLogout()" class="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Sair
+          </button>
+        </div>
+      </div>
+
+      <!-- Abas Entrar / Cadastrar (Exibidas se NÃO estiver logado) -->
+      <div id="auth-nao-logado-container">
+        <div class="flex border-b border-slate-200 bg-slate-100/70 p-1 text-xs font-semibold">
+          <button id="auth-tab-login" onclick="alternarAbaAuth('login')" class="flex-1 py-2 rounded-lg bg-white text-emerald-700 font-bold shadow-xs transition">
+            Já tenho conta (Entrar)
+          </button>
+          <button id="auth-tab-cadastro" onclick="alternarAbaAuth('cadastro')" class="flex-1 py-2 rounded-lg text-slate-600 hover:text-slate-900 transition">
+            Criar Nova Conta
+          </button>
+        </div>
+
+        <!-- Formulário de Login -->
+        <div id="auth-form-login" class="p-6 space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
+            <input type="email" id="login-email" placeholder="seuemail@exemplo.com" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Senha</label>
+            <input type="password" id="login-senha" placeholder="Sua senha" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div id="auth-login-erro" class="hidden p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg"></div>
+          <button onclick="executarLogin()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-2">
+            <i data-lucide="log-in" class="w-4 h-4"></i> Entrar
+          </button>
+        </div>
+
+        <!-- Formulário de Cadastro -->
+        <div id="auth-form-cadastro" class="hidden p-6 space-y-3.5">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Seu Nome / Apelido</label>
+            <input type="text" id="cad-nome" placeholder="Ex: Lucas Silva, Mariana..." class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">E-mail</label>
+            <input type="email" id="cad-email" placeholder="seuemail@exemplo.com" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Bairro em Atibaia (Opcional)</label>
+            <input type="text" id="cad-bairro" placeholder="Ex: Alvinópolis, Lucas, Centro, Portão..." class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Criar Senha</label>
+            <input type="password" id="cad-senha" placeholder="Mínimo 4 caracteres" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+          </div>
+          <div id="auth-cad-erro" class="hidden p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg"></div>
+          <button onclick="executarCadastro()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-2">
+            <i data-lucide="user-plus" class="w-4 h-4"></i> Criar Minha Conta
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
+    App de Economia em Supermercados &copy; 2026 — SQLite & SEFAZ NFC-e
+  </footer>
+
+  <script src="app.js?v=3.6"></script>
+</body>
+</html>
