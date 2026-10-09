@@ -1192,7 +1192,7 @@ async function carregarGruposComparacao() {
               <span class="text-lg">🏆</span>
               <div>
                 <span class="text-[10px] uppercase tracking-wider font-bold text-emerald-800 block">Opção Mais Econômica na Cesta</span>
-                <span class="font-black text-xs text-slate-900">${escapeHtml(v.nome_padrao)}</span>
+                <span class="font-black text-xs text-slate-900 whitespace-normal break-words leading-tight block">${escapeHtml(v.nome_padrao)}</span>
                 <span class="text-[11px] text-emerald-800 block">no <strong>${escapeHtml(v.melhorMercado || v.ultimoMercado)}</strong> ${v.melhorEndereco ? `(${escapeHtml(v.melhorEndereco)})` : ''}</span>
                 ${packVencedor}
               </div>
@@ -1239,9 +1239,9 @@ async function carregarGruposComparacao() {
               </button>`;
 
           return `
-            <div class="flex items-center justify-between p-2.5 bg-white rounded-lg border ${ehVencedor ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200'} text-xs gap-2">
+            <div class="flex items-start justify-between p-2.5 bg-white rounded-lg border ${ehVencedor ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200'} text-xs gap-2">
               <div class="flex-1 min-w-0">
-                <div class="font-bold text-slate-800 truncate flex items-center gap-1.5">
+                <div class="font-bold text-slate-800 whitespace-normal break-words leading-tight flex items-center gap-1.5">
                   ${ehVencedor ? '⭐' : ''} ${escapeHtml(p.nome_padrao)}
                 </div>
                 <div class="text-[10px] text-slate-500 mt-0.5">
@@ -1249,7 +1249,7 @@ async function carregarGruposComparacao() {
                   ${packObs}
                 </div>
               </div>
-              <div class="flex items-center gap-1.5 flex-shrink-0">
+              <div class="flex items-center gap-1.5 flex-shrink-0 pt-0.5">
                 <button onclick="abrirHistoricoDeProduto(${p.id}, '${escapeHtml(p.nome_padrao).replace(/'/g, "\\'")}')" class="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-slate-100 rounded-md transition" title="Ver Histórico">
                   <i data-lucide="trending-up" class="w-3.5 h-3.5"></i>
                 </button>
@@ -1274,9 +1274,9 @@ async function carregarGruposComparacao() {
             </button>
             <div id="lista-negra-container-${grupo.id}" class="hidden space-y-1.5 pt-2">
               ${grupo.produtos_bloqueados.map(b => `
-                <div class="flex items-center justify-between p-2 bg-rose-50/60 rounded-lg border border-rose-100 text-xs gap-2">
+                <div class="flex items-start justify-between p-2 bg-rose-50/60 rounded-lg border border-rose-100 text-xs gap-2">
                   <div class="min-w-0 flex-1">
-                    <span class="font-medium text-slate-700 line-through truncate block">${escapeHtml(b.nome_padrao)}</span>
+                    <span class="font-medium text-slate-700 line-through whitespace-normal break-words block leading-tight">${escapeHtml(b.nome_padrao)}</span>
                     <span class="text-[10px] text-rose-600 font-semibold">Bloqueado nesta cesta</span>
                   </div>
                   <button onclick="desbloquearMarcaCesta(${grupo.id}, ${b.id}, '${escapeHtml(b.nome_padrao).replace(/'/g, "\\'")}')" class="px-2 py-1 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded text-[11px] font-bold transition flex items-center gap-1 shrink-0 shadow-2xs">
@@ -2473,10 +2473,90 @@ async function confirmarAdicaoCestaNaLista() {
   }
 }
 
-// ==================== MODAL: CRIAÇÃO / ADIÇÃO RÁPIDA EM MASSA NA CESTA ====================
+// ==================== MODAL: ASSISTENTE INTELIGENTE DE CESTAS (FILTROS FACETADOS) ====================
 let timeoutMassaBusca = null;
 let produtosEncontradosMassa = [];
 let grupoIdMassaDestino = null;
+
+// Estados dos filtros facetados do assistente de cestas
+let marcasFiltroMassa = new Set();
+let medidasFiltroMassa = new Set();
+let tiposFiltroMassa = new Set();
+
+// Dicionário de marcas conhecidas para extração inteligente
+const MARCAS_SUPERMERCADO_CONHECIDAS = [
+  'ALBANY', 'BULNEZ', 'BOTANICALS', 'CLOY', 'DOVE', 'PROTEX', 'FRANCIS', 'PHEBO', 'REXONA', 'NIVEA', 'PALMOLIVE', 'LUX', 'GRANADO', 'SENADOR', 'FARNESE', 'DAVENE', 'MONANGE', 'BABY SOFT', 'SUAVE', 'SIENE',
+  'YPE', 'YPÊ', 'MINUANO', 'LIMPOL', 'BOMBRIL', 'VEJA', 'SUPREMA', 'DRAGÃO', 'DRAGAO', 'BRILHANTE', 'OMO', 'TIXAN', 'SURF', 'ARIEL', 'DOWNY', 'CONFORT', 'FOFO', 'VANISH', 'AJAX', 'PINHO SOL', 'CIF', 'SAPOLIO',
+  'QUALY', 'DORIANA', 'VIGOR', 'CLAYBOM', 'BECEL', 'DELICIA', 'DELÍCIA', 'AVIACAO', 'AVIAÇÃO', 'PRESIDENT', 'PRÉSIDENT', 'ITAMBE', 'ITAMBÉ', 'TIROLEZ', 'SCALA', 'POLENGHI', 'QUATATA', 'QUATATÁ', 'DANONE', 'NESTLE', 'NESTLÉ', 'PIRACANJUBA', 'PARMALAT', 'JUSSARA', 'LEITBOM', 'NINHO', 'PAULISTA', 'ITALAC', 'ELEGE', 'ELEGÊ', 'SHEFA', 'BATAVO', 'POLLY',
+  'CAMIL', 'TIO JOAO', 'TIO JOÃO', 'PRATO FINO', 'NAMORADO', 'MAXIMO', 'MÁXIMO', 'KICALDO', 'BROTO LEGAL', 'PANELA DE FERRO', 'DONA BENTA', 'SOL', 'RENATA', 'BARILLA', 'ADRIA', 'GALO', 'SANTA AMALIA', 'SANTA AMÁLIA', 'URBANO',
+  'PILAO', 'PILÃO', '3 CORACOES', '3 CORAÇÕES', 'TRES CORACOES', 'MELITTA', 'CABOCLO', 'SANTA CLARA', 'FORT', 'PELE', 'PELÉ', 'UNIAO', 'UNIÃO', 'LOR', 'L\'OR', 'NESCAFE', 'NESCAFÉ', 'TODDY', 'NESKAU', 'NESCAU', 'MARATA', 'MARATÁ',
+  'SADIA', 'PERDIGAO', 'PERDIGÃO', 'SEARA', 'AURORA', 'FRIBOI', 'SWIFT', 'MATURATTA', 'COOP', 'HELLMANNS', 'HELLMANN\'S', 'HEINZ', 'FUGINI', 'QUERO', 'PREMIATO', 'POMAROLA', 'ELEFANTE', 'TARANTELA', 'LIZA', 'SOYA', 'COAMO', 'CORISCO'
+];
+
+function extrairAtributosProduto(nome, unidadePadrao = 'UN') {
+  const n = (nome || '').toUpperCase();
+
+  // 1. Marca
+  let marcaEncontrada = null;
+  for (const m of MARCAS_SUPERMERCADO_CONHECIDAS) {
+    const reg = new RegExp('\\b' + m.replace(/'/g, "\\'") + '\\b', 'i');
+    if (reg.test(n)) {
+      marcaEncontrada = m.charAt(0).toUpperCase() + m.slice(1).toLowerCase();
+      break;
+    }
+  }
+
+  if (!marcaEncontrada) {
+    const tokens = (nome || '').split(/\s+/).filter(t => t.length > 2 && !/^(DE|DA|DO|EM|COM|SEM|PARA|POR|UN|KG|GR|G|ML|L|LT|LTS|SABONETE|ARROZ|LEITE|QUEIJO|CAFE|CAFÉ|DETERGENTE|MARGARINA|MANTEIGA|FEIJAO|FEIJÃO|OLEO|ÓLEO|SUCO|REFRIGERANTE)$/i.test(t));
+    if (tokens.length > 0) {
+      marcaEncontrada = tokens[0].charAt(0).toUpperCase() + tokens[0].slice(1).toLowerCase();
+    } else {
+      marcaEncontrada = 'Outra Marca';
+    }
+  }
+
+  // 2. Medida (Gramatura ou Volume, incluindo packs)
+  let medidaEncontrada = 'Outro Tamanho';
+  const matchPackG = n.match(/(?:\d+\s*X\s*|\b)(\d+(?:[.,]\d+)?)\s*(G|GR|GRS|GRAMAS|KG|KGS|QUILOS?)(?:\s|\)|\.|$)/i);
+  if (matchPackG) {
+    let num = parseFloat(matchPackG[1].replace(',', '.'));
+    let un = matchPackG[2].toUpperCase();
+    if (un.startsWith('KG') || un.startsWith('QUILO')) {
+      medidaEncontrada = num >= 1 ? `${num}kg` : `${num * 1000}g`;
+    } else {
+      medidaEncontrada = num >= 1000 ? `${(num / 1000).toFixed(1).replace('.0', '')}kg` : `${num}g`;
+    }
+  } else {
+    const matchPackL = n.match(/(?:\d+\s*X\s*|\b)(\d+(?:[.,]\d+)?)\s*(ML|MLS|L|LT|LTS|LITROS?)(?:\s|\)|\.|$)/i);
+    if (matchPackL) {
+      let num = parseFloat(matchPackL[1].replace(',', '.'));
+      let un = matchPackL[2].toUpperCase();
+      if (un === 'L' || un.startsWith('LT') || un.startsWith('LITRO')) {
+        medidaEncontrada = num >= 1 ? `${num}L` : `${num * 1000}ml`;
+      } else {
+        medidaEncontrada = num >= 1000 ? `${(num / 1000).toFixed(1).replace('.0', '')}L` : `${num}ml`;
+      }
+    }
+  }
+
+  // 3. Formato / Tipo
+  let tipoFormato = 'Padrão';
+  if (/BARRA|EM BARRA/i.test(n) || (medidaEncontrada.includes('g') && !/LIQUIDO|LÍQUIDO/i.test(n))) {
+    tipoFormato = 'Em Barra';
+  }
+  if (/LIQUIDO|LÍQUIDO/i.test(n)) tipoFormato = 'Líquido';
+  if (/REFIL/i.test(n)) tipoFormato = 'Refil';
+  if (/FATIADO|FAT/i.test(n)) tipoFormato = 'Fatiado';
+  if (/PEDAC|PEDAÇO/i.test(n)) tipoFormato = 'Em Pedaço';
+  if (/RALADO/i.test(n)) tipoFormato = 'Ralado';
+  if (/PACK|KIT|COM \d+UN|C\/\s*\d+|LEVE\s*\d+/i.test(n)) tipoFormato = 'Pack / Kit';
+
+  return {
+    marca: marcaEncontrada,
+    medida: medidaEncontrada,
+    tipo: tipoFormato
+  };
+}
 
 function abrirModalCestaMassa(grupoId = null) {
   grupoIdMassaDestino = grupoId;
@@ -2485,10 +2565,20 @@ function abrirModalCestaMassa(grupoId = null) {
   const inputNome = document.getElementById('massa-cesta-nome');
   const inputBusca = document.getElementById('massa-busca-termo');
   const container = document.getElementById('massa-itens-container');
+  const containerFiltros = document.getElementById('massa-filtros-facetados-container');
 
   if (inputNome) inputNome.value = '';
   if (inputBusca) inputBusca.value = '';
   produtosEncontradosMassa = [];
+  marcasFiltroMassa.clear();
+  medidasFiltroMassa.clear();
+  tiposFiltroMassa.clear();
+
+  if (containerFiltros) {
+    containerFiltros.classList.add('hidden');
+    containerFiltros.innerHTML = '';
+  }
+
   atualizarContadorSelecaoMassa();
 
   if (boxNome) {
@@ -2502,7 +2592,7 @@ function abrirModalCestaMassa(grupoId = null) {
   if (container) {
     container.innerHTML = `
       <div class="text-center py-8 text-slate-400 text-xs">
-        Digite uma palavra-chave acima (ex: <strong>Arroz</strong>, <strong>Sabonete</strong>, <strong>Leite</strong>) para buscar e selecionar todas as marcas equivalentes em 1 clique.
+        Digite um produto acima (ex: <strong>Sabonete</strong>, <strong>Detergente</strong>, <strong>Arroz</strong>, <strong>Queijo</strong>, <strong>Café</strong>) para carregar marcas e gramaturas.
       </div>
     `;
   }
@@ -2523,87 +2613,342 @@ function buscarProdutosParaCestaMassa(termo) {
   clearTimeout(timeoutMassaBusca);
   const q = (termo || '').trim();
   const container = document.getElementById('massa-itens-container');
+  const containerFiltros = document.getElementById('massa-filtros-facetados-container');
   if (!container) return;
 
   if (q.length < 2) {
     container.innerHTML = `<div class="text-center py-8 text-slate-400 text-xs">Digite pelo menos 2 letras para buscar...</div>`;
+    if (containerFiltros) {
+      containerFiltros.classList.add('hidden');
+      containerFiltros.innerHTML = '';
+    }
     produtosEncontradosMassa = [];
     atualizarContadorSelecaoMassa();
     return;
   }
 
+  // Preenche nome da cesta automaticamente se estiver vazio
+  const inputNome = document.getElementById('massa-cesta-nome');
+  if (inputNome && !inputNome.value.trim() && !grupoIdMassaDestino) {
+    const nomeFormatado = q.charAt(0).toUpperCase() + q.slice(1).toLowerCase();
+    inputNome.value = `Cesta de ${nomeFormatado}`;
+  }
+
   container.innerHTML = `
     <div class="p-6 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
       <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-emerald-600"></div>
-      <span>Localizando todos os produtos com "${escapeHtml(q)}"...</span>
+      <span>Buscando todas as variações e marcas de "${escapeHtml(q)}"...</span>
     </div>
   `;
 
   timeoutMassaBusca = setTimeout(async () => {
     try {
-      const res = await fetch(`/api/produtos/autocomplete?q=${encodeURIComponent(q)}&limite=100`);
+      const res = await fetch(`/api/produtos/autocomplete?q=${encodeURIComponent(q)}&limite=150`);
       const data = await res.json();
-      produtosEncontradosMassa = (data.sucesso && data.produtos) ? data.produtos : [];
+      const listaProds = (data.sucesso && data.produtos) ? data.produtos : [];
 
-      if (produtosEncontradosMassa.length === 0) {
+      if (listaProds.length === 0) {
         container.innerHTML = `<div class="p-8 text-center text-slate-500 text-xs">Nenhum produto encontrado com "${escapeHtml(q)}".</div>`;
+        if (containerFiltros) containerFiltros.classList.add('hidden');
+        produtosEncontradosMassa = [];
         atualizarContadorSelecaoMassa();
         return;
       }
 
-      // Preenche a lista com todos os itens marcados por padrão para agilidade!
-      container.innerHTML = produtosEncontradosMassa.map(p => {
-        const norm = p.texto_normalizado ? ` (${p.texto_normalizado})` : '';
-        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}${norm}` : '';
-        const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
-        const precosTexto = [menor, medio].filter(Boolean).join(' • ');
+      // Anota atributos inteligentes para cada produto
+      produtosEncontradosMassa = listaProds.map(p => {
+        const at = extrairAtributosProduto(p.nome_padrao, p.unidade);
+        return {
+          ...p,
+          marca: at.marca,
+          medida: at.medida,
+          tipo: at.tipo,
+          selecionado: true
+        };
+      });
 
-        return `
-          <label class="p-3 bg-white hover:bg-emerald-50/50 rounded-xl border border-slate-200 transition flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" name="massa-chk-item" value="${p.id}" checked onchange="atualizarContadorSelecaoMassa()" class="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer" />
-            <div class="flex-1 min-w-0">
-              <p class="font-bold text-slate-900 text-xs truncate">${escapeHtml(p.nome_padrao)}</p>
-              <p class="text-[10px] text-slate-500 truncate">${escapeHtml(precosTexto || 'Preço registrado em Atibaia')}</p>
-            </div>
-            <span class="text-[10px] bg-slate-100 text-slate-700 font-bold px-1.5 py-0.5 rounded uppercase">
-              ${escapeHtml(p.unidade || 'UN')}
-            </span>
-          </label>
-        `;
-      }).join('');
+      // Inicializa todos os filtros como ativos
+      marcasFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.marca));
+      medidasFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.medida));
+      tiposFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.tipo));
 
+      renderizarFiltrosFacetadosMassa();
+      renderizarListaItensMassa();
       atualizarContadorSelecaoMassa();
       lucide.createIcons();
     } catch (err) {
       container.innerHTML = `<div class="p-4 text-rose-600 text-xs">Erro na busca: ${err.message}</div>`;
     }
-  }, 150);
+  }, 120);
+}
+
+// Renderiza a barra interativa de filtros facetados (Marcas, Gramaturas, Formatos)
+function renderizarFiltrosFacetadosMassa() {
+  const containerFiltros = document.getElementById('massa-filtros-facetados-container');
+  if (!containerFiltros || produtosEncontradosMassa.length === 0) return;
+
+  // Agrupa contagens
+  const contagemMarcas = {};
+  const contagemMedidas = {};
+  const contagemTipos = {};
+
+  produtosEncontradosMassa.forEach(p => {
+    contagemMarcas[p.marca] = (contagemMarcas[p.marca] || 0) + 1;
+    contagemMedidas[p.medida] = (contagemMedidas[p.medida] || 0) + 1;
+    contagemTipos[p.tipo] = (contagemTipos[p.tipo] || 0) + 1;
+  });
+
+  const marcasOrdenadas = Object.keys(contagemMarcas).sort((a, b) => contagemMarcas[b] - contagemMarcas[a]);
+  const medidasOrdenadas = Object.keys(contagemMedidas).sort((a, b) => contagemMedidas[b] - contagemMedidas[a]);
+  const tiposOrdenados = Object.keys(contagemTipos).sort((a, b) => contagemTipos[b] - contagemTipos[a]);
+
+  containerFiltros.innerHTML = `
+    <!-- Filtro de Marcas -->
+    <div class="space-y-1.5">
+      <div class="flex items-center justify-between">
+        <span class="font-bold text-slate-800 flex items-center gap-1">
+          <i data-lucide="tag" class="w-3.5 h-3.5 text-emerald-600"></i>
+          Marcas Identificadas (${marcasOrdenadas.length})
+        </span>
+        <div class="flex items-center gap-1.5 text-[10px]">
+          <button type="button" onclick="alternarTodasMarcasMassa(true)" class="text-emerald-700 hover:underline font-bold">Marcar Todas</button>
+          <span class="text-slate-300">|</span>
+          <button type="button" onclick="alternarTodasMarcasMassa(false)" class="text-slate-500 hover:underline">Desmarcar</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+        ${marcasOrdenadas.map(m => {
+          const ativo = marcasFiltroMassa.has(m);
+          return `
+            <button type="button" onclick="toggleFiltroMarcaMassa('${escapeHtml(m).replace(/'/g, "\\'")}')" class="px-2 py-1 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 border cursor-pointer ${ativo ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}">
+              <span>${escapeHtml(m)}</span>
+              <span class="text-[9px] px-1 py-0.2 rounded-full ${ativo ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-100 text-slate-500'} font-bold">${contagemMarcas[m]}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
+
+    <!-- Filtro de Gramaturas & Volumes -->
+    <div class="space-y-1.5 pt-2 border-t border-slate-200">
+      <div class="flex items-center justify-between">
+        <span class="font-bold text-slate-800 flex items-center gap-1">
+          <i data-lucide="scale" class="w-3.5 h-3.5 text-emerald-600"></i>
+          Gramaturas & Volumes (${medidasOrdenadas.length})
+        </span>
+        <div class="flex items-center gap-1.5 text-[10px]">
+          <button type="button" onclick="alternarTodasMedidasMassa(true)" class="text-emerald-700 hover:underline font-bold">Marcar Todos</button>
+          <span class="text-slate-300">|</span>
+          <button type="button" onclick="alternarTodasMedidasMassa(false)" class="text-slate-500 hover:underline">Desmarcar</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        ${medidasOrdenadas.map(med => {
+          const ativo = medidasFiltroMassa.has(med);
+          return `
+            <button type="button" onclick="toggleFiltroMedidaMassa('${escapeHtml(med).replace(/'/g, "\\'")}')" class="px-2 py-1 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 border cursor-pointer ${ativo ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}">
+              <span>${escapeHtml(med)}</span>
+              <span class="text-[9px] px-1 py-0.2 rounded-full ${ativo ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-100 text-slate-500'} font-bold">${contagemMedidas[med]}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
+
+    <!-- Filtro de Tipos / Formatos -->
+    ${tiposOrdenados.length > 1 ? `
+      <div class="space-y-1.5 pt-2 border-t border-slate-200">
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-slate-800 flex items-center gap-1">
+            <i data-lucide="box" class="w-3.5 h-3.5 text-emerald-600"></i>
+            Tipos & Formatos (${tiposOrdenados.length})
+          </span>
+          <div class="flex items-center gap-1.5 text-[10px]">
+            <button type="button" onclick="alternarTodosTiposMassa(true)" class="text-emerald-700 hover:underline font-bold">Marcar Todos</button>
+            <span class="text-slate-300">|</span>
+            <button type="button" onclick="alternarTodosTiposMassa(false)" class="text-slate-500 hover:underline">Desmarcar</button>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          ${tiposOrdenados.map(tp => {
+            const ativo = tiposFiltroMassa.has(tp);
+            return `
+              <button type="button" onclick="toggleFiltroTipoMassa('${escapeHtml(tp).replace(/'/g, "\\'")}')" class="px-2 py-1 rounded-lg text-[11px] font-semibold transition flex items-center gap-1 border cursor-pointer ${ativo ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}">
+                <span>${escapeHtml(tp)}</span>
+                <span class="text-[9px] px-1 py-0.2 rounded-full ${ativo ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-100 text-slate-500'} font-bold">${contagemTipos[tp]}</span>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    ` : ''}
+  `;
+
+  containerFiltros.classList.remove('hidden');
+  lucide.createIcons();
+}
+
+// Alternar marcas
+function toggleFiltroMarcaMassa(marca) {
+  if (marcasFiltroMassa.has(marca)) {
+    marcasFiltroMassa.delete(marca);
+  } else {
+    marcasFiltroMassa.add(marca);
+  }
+  aplicarFiltrosFacetadosNaSelecao();
+}
+
+function alternarTodasMarcasMassa(selecionar) {
+  if (selecionar) {
+    produtosEncontradosMassa.forEach(p => marcasFiltroMassa.add(p.marca));
+  } else {
+    marcasFiltroMassa.clear();
+  }
+  aplicarFiltrosFacetadosNaSelecao();
+}
+
+// Alternar medidas
+function toggleFiltroMedidaMassa(medida) {
+  if (medidasFiltroMassa.has(medida)) {
+    medidasFiltroMassa.delete(medida);
+  } else {
+    medidasFiltroMassa.add(medida);
+  }
+  aplicarFiltrosFacetadosNaSelecao();
+}
+
+function alternarTodasMedidasMassa(selecionar) {
+  if (selecionar) {
+    produtosEncontradosMassa.forEach(p => medidasFiltroMassa.add(p.medida));
+  } else {
+    medidasFiltroMassa.clear();
+  }
+  aplicarFiltrosFacetadosNaSelecao();
+}
+
+// Alternar tipos
+function toggleFiltroTipoMassa(tipo) {
+  if (tiposFiltroMassa.has(tipo)) {
+    tiposFiltroMassa.delete(tipo);
+  } else {
+    tiposFiltroMassa.add(tipo);
+  }
+  aplicarFiltrosFacetadosNaSelecao();
+}
+
+function alternarTodosTiposMassa(selecionar) {
+  if (selecionar) {
+    produtosEncontradosMassa.forEach(p => tiposFiltroMassa.add(p.tipo));
+  } else {
+    tiposFiltroMassa.clear();
+  }
+  aplicarFiltrosFacetadosNaSelecao();
+}
+
+// Aplica o cruzamento dos 3 filtros em cada produto
+function aplicarFiltrosFacetadosNaSelecao() {
+  produtosEncontradosMassa.forEach(p => {
+    const atendeMarca = marcasFiltroMassa.has(p.marca);
+    const atendeMedida = medidasFiltroMassa.has(p.medida);
+    const atendeTipo = tiposFiltroMassa.has(p.tipo);
+    p.selecionado = atendeMarca && atendeMedida && atendeTipo;
+  });
+
+  renderizarFiltrosFacetadosMassa();
+  renderizarListaItensMassa();
+  atualizarContadorSelecaoMassa();
+}
+
+// Renderiza a lista de produtos com nome completo e badges
+function renderizarListaItensMassa() {
+  const container = document.getElementById('massa-itens-container');
+  if (!container || produtosEncontradosMassa.length === 0) return;
+
+  container.innerHTML = produtosEncontradosMassa.map(p => {
+    const norm = p.texto_normalizado ? ` (${p.texto_normalizado})` : '';
+    const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}${norm}` : '';
+    const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
+    const precosTexto = [menor, medio].filter(Boolean).join(' • ');
+
+    const cardClass = p.selecionado
+      ? 'bg-white border-emerald-300 ring-1 ring-emerald-500/20 shadow-xs'
+      : 'bg-slate-50/70 border-slate-200 opacity-60';
+
+    return `
+      <label class="p-3.5 rounded-xl border transition flex items-start gap-3 cursor-pointer ${cardClass}">
+        <input type="checkbox" name="massa-chk-item" value="${p.id}" ${p.selecionado ? 'checked' : ''} onchange="alternarSelecaoItemIndividual(${p.id}, this.checked)" class="w-4 h-4 mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer shrink-0" />
+        <div class="flex-1 min-w-0">
+          <!-- Nome completo do produto com quebra natural sem corte de texto -->
+          <p class="font-bold text-slate-900 text-xs sm:text-sm whitespace-normal break-words leading-snug">
+            ${escapeHtml(p.nome_padrao)}
+          </p>
+
+          <!-- Badges de Marca, Medida e Tipo -->
+          <div class="flex items-center gap-1.5 flex-wrap mt-1.5">
+            <span class="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md">
+              🏷️ ${escapeHtml(p.marca)}
+            </span>
+            <span class="text-[10px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-md">
+              ⚖️ ${escapeHtml(p.medida)}
+            </span>
+            <span class="text-[10px] bg-sky-100 text-sky-800 font-bold px-2 py-0.5 rounded-md">
+              🧴 ${escapeHtml(p.tipo)}
+            </span>
+          </div>
+
+          <p class="text-[11px] text-slate-500 mt-1 font-medium">
+            ${escapeHtml(precosTexto || 'Preço registrado em Atibaia')}
+          </p>
+        </div>
+      </label>
+    `;
+  }).join('');
+
+  lucide.createIcons();
+}
+
+function alternarSelecaoItemIndividual(produtoId, marcado) {
+  const prod = produtosEncontradosMassa.find(p => p.id === produtoId);
+  if (prod) {
+    prod.selecionado = !!marcado;
+  }
+  renderizarListaItensMassa();
+  atualizarContadorSelecaoMassa();
 }
 
 function alternarSelecaoTodosCestaMassa(selecionar) {
-  const checkboxes = document.querySelectorAll('input[name="massa-chk-item"]');
-  checkboxes.forEach(chk => {
-    chk.checked = !!selecionar;
+  produtosEncontradosMassa.forEach(p => {
+    p.selecionado = !!selecionar;
   });
+  if (selecionar) {
+    marcasFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.marca));
+    medidasFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.medida));
+    tiposFiltroMassa = new Set(produtosEncontradosMassa.map(p => p.tipo));
+  } else {
+    marcasFiltroMassa.clear();
+    medidasFiltroMassa.clear();
+    tiposFiltroMassa.clear();
+  }
+  renderizarFiltrosFacetadosMassa();
+  renderizarListaItensMassa();
   atualizarContadorSelecaoMassa();
 }
 
 function atualizarContadorSelecaoMassa() {
   const totalEl = document.getElementById('massa-total-encontrados');
   const qtdEl = document.getElementById('massa-qtd-selecionados');
-  const checkboxes = document.querySelectorAll('input[name="massa-chk-item"]');
-  const selecionados = Array.from(checkboxes).filter(c => c.checked).length;
+  const selecionados = produtosEncontradosMassa.filter(p => p.selecionado).length;
 
-  if (totalEl) totalEl.textContent = checkboxes.length;
+  if (totalEl) totalEl.textContent = produtosEncontradosMassa.length;
   if (qtdEl) qtdEl.textContent = selecionados;
 }
 
 async function salvarCestaMassa() {
-  const checkboxes = document.querySelectorAll('input[name="massa-chk-item"]:checked');
-  const produtoIds = Array.from(checkboxes).map(c => parseInt(c.value));
+  const produtosSelecionados = produtosEncontradosMassa.filter(p => p.selecionado);
+  const produtoIds = produtosSelecionados.map(p => p.id);
 
   if (produtoIds.length === 0) {
-    alert("Por favor, selecione pelo menos um produto.");
+    alert("Por favor, selecione pelo menos um produto ou marque uma das opções nos filtros de marcas.");
     return;
   }
 
@@ -2614,12 +2959,12 @@ async function salvarCestaMassa() {
       const inputNome = document.getElementById('massa-cesta-nome');
       const nome = (inputNome ? inputNome.value : '').trim();
       if (!nome) {
-        alert("Por favor, informe o nome da Cesta de Comparação (ex: Cesta de Sabonetes, Arroz 5kg...).");
+        alert("Por favor, informe o nome da Cesta de Comparação (ex: Sabonetes em Barra, Arroz 5kg, Detergente...).");
         inputNome?.focus();
         return;
       }
 
-      // Cria a cesta primeiro
+      // Cria a cesta dinâmica
       const resGrupo = await fetch('/api/grupos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2633,7 +2978,7 @@ async function salvarCestaMassa() {
       grupoId = dataGrupo.grupo.id;
     }
 
-    // Adiciona todos os produtos em massa (Bulk)
+    // Adiciona todos os produtos selecionados em massa (Bulk)
     const resBulk = await fetch(`/api/grupos/${grupoId}/produtos/bulk`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2648,6 +2993,11 @@ async function salvarCestaMassa() {
   } catch (err) {
     alert(`Erro ao salvar cesta: ${err.message}`);
   }
+}
+
+// Modal Criar Grupo (Redireciona para o Assistente Inteligente de Cestas)
+function abrirModalCriarGrupo() {
+  abrirModalCestaMassa();
 }
 
 // Alternar status comprado
@@ -2792,15 +3142,36 @@ function renderizarOtimizacao(analise) {
               </div>
 
               <div class="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                ${itensDisponiveis.map(it => `
-                  <div class="p-2 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between gap-2 text-xs shadow-2xs">
-                    <div class="min-w-0 flex-1">
-                      <div class="font-bold text-slate-900 truncate">${escapeHtml(it.produtoEscolhidoNome || it.nome)}</div>
-                      <div class="text-[10px] text-slate-500">${it.quantidade} un x R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}</div>
+                ${itensDisponiveis.map(it => {
+                  const bannerKit = (it.ehPack && it.qtdPack > 1) ? `
+                    <div class="p-2 bg-amber-50/90 border border-amber-200/80 rounded-lg text-[11px] text-amber-900 space-y-1">
+                      <div class="flex items-start gap-1">
+                        <span>💡</span>
+                        <span>Preço unitário de <strong>R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}</strong> referente ao <strong>Kit com ${it.qtdPack} un por R$ ${(it.valorOriginalPack || (it.precoUnitario * it.qtdPack)).toFixed(2).replace('.', ',')}</strong></span>
+                      </div>
+                      ${it.itemId && it.quantidade !== it.qtdPack ? `
+                        <div class="pt-0.5">
+                          <button onclick="alterarQtdItemLista(${it.itemId}, ${it.qtdPack})" class="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-[10px] font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer">
+                            <i data-lucide="plus-circle" class="w-3 h-3"></i> Ajustar lista para ${it.qtdPack} un (Levar Kit completo)
+                          </button>
+                        </div>
+                      ` : ''}
                     </div>
-                    <span class="font-bold text-slate-900 shrink-0">R$ ${it.subtotal.toFixed(2).replace('.', ',')}</span>
-                  </div>
-                `).join('')}
+                  ` : '';
+
+                  return `
+                    <div class="p-2 bg-white rounded-xl border border-slate-200/80 space-y-1.5 text-xs shadow-2xs">
+                      <div class="flex items-center justify-between gap-2">
+                        <div class="min-w-0 flex-1">
+                          <div class="font-bold text-slate-900 truncate">${escapeHtml(it.produtoEscolhidoNome || it.nome)}</div>
+                          <div class="text-[10px] text-slate-500">${it.quantidade} un x R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}</div>
+                        </div>
+                        <span class="font-bold text-slate-900 shrink-0">R$ ${it.subtotal.toFixed(2).replace('.', ',')}</span>
+                      </div>
+                      ${bannerKit}
+                    </div>
+                  `;
+                }).join('')}
 
                 ${itensFaltantes.map(it => `
                   <div class="p-2 bg-rose-50/50 rounded-xl border border-rose-100/80 flex items-center justify-between gap-2 text-xs opacity-75">
@@ -2864,13 +3235,32 @@ function renderizarOtimizacao(analise) {
           <div class="divide-y divide-slate-100 p-2">
             ${g.itens.map(it => {
               const normTag = it.textoNormalizado ? ` <span class="text-emerald-700 font-semibold">(${escapeHtml(it.textoNormalizado)})</span>` : '';
-              return `
-                <div class="p-2.5 flex items-center justify-between text-xs hover:bg-slate-50 transition">
-                  <div class="min-w-0 flex-1">
-                    <p class="font-semibold text-slate-800 truncate">${escapeHtml(it.nome)}</p>
-                    <p class="text-[11px] text-slate-500">${it.quantidade} ${escapeHtml(it.unidade || 'UN')} x R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}${normTag}</p>
+              const bannerKitDiv = (it.ehPack && it.qtdPack > 1) ? `
+                <div class="p-2 bg-amber-50/90 border border-amber-200/80 rounded-lg text-[11px] text-amber-900 space-y-1 mt-1">
+                  <div class="flex items-start gap-1">
+                    <span>💡</span>
+                    <span>Preço unitário de <strong>R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}</strong> referente ao <strong>Kit com ${it.qtdPack} un por R$ ${(it.valorOriginalPack || (it.precoUnitario * it.qtdPack)).toFixed(2).replace('.', ',')}</strong></span>
                   </div>
-                  <span class="font-bold text-slate-900 ml-2">R$ ${it.subtotal.toFixed(2).replace('.', ',')}</span>
+                  ${it.itemId && it.quantidade !== it.qtdPack ? `
+                    <div class="pt-0.5">
+                      <button onclick="alterarQtdItemLista(${it.itemId}, ${it.qtdPack})" class="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-[10px] font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer">
+                        <i data-lucide="plus-circle" class="w-3 h-3"></i> Ajustar lista para ${it.qtdPack} un (Levar Kit completo)
+                      </button>
+                    </div>
+                  ` : ''}
+                </div>
+              ` : '';
+
+              return `
+                <div class="p-2.5 space-y-1 hover:bg-slate-50 transition text-xs">
+                  <div class="flex items-center justify-between">
+                    <div class="min-w-0 flex-1">
+                      <p class="font-semibold text-slate-800 truncate">${escapeHtml(it.nome)}</p>
+                      <p class="text-[11px] text-slate-500">${it.quantidade} ${escapeHtml(it.unidade || 'UN')} x R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}${normTag}</p>
+                    </div>
+                    <span class="font-bold text-slate-900 ml-2">R$ ${it.subtotal.toFixed(2).replace('.', ',')}</span>
+                  </div>
+                  ${bannerKitDiv}
                 </div>
               `;
             }).join('')}
@@ -2912,11 +3302,15 @@ function renderizarOtimizacao(analise) {
           ? `<span class="block text-[9px] font-normal text-slate-500 truncate max-w-[120px]" title="${escapeHtml(dadoPreco.produtoEscolhidoNome)}">${escapeHtml(dadoPreco.produtoEscolhidoNome)}</span>`
           : '';
         const normCell = dadoPreco.textoNormalizado ? `<span class="block text-[9px] text-emerald-700 font-semibold">${escapeHtml(dadoPreco.textoNormalizado)}</span>` : '';
+        const packCell = (dadoPreco.ehPack && dadoPreco.qtdPack > 1)
+          ? `<span class="block text-[9px] text-amber-700 font-semibold">📦 Kit ${dadoPreco.qtdPack} un</span>`
+          : '';
 
         return `
           <td class="px-3 py-2 text-right whitespace-nowrap ${cellClass}">
             <div>R$ ${dadoPreco.precoUnitario.toFixed(2).replace('.', ',')}${ehMenor ? ' ⭐' : ''}</div>
             ${normCell}
+            ${packCell}
             ${subtituloEscolhido}
           </td>
         `;
