@@ -1055,9 +1055,6 @@ async function listarGruposComparacao() {
   const grupos = await allQuery('SELECT * FROM grupos_comparacao ORDER BY id DESC');
   
   const gruposComProdutos = await Promise.all(grupos.map(async (g) => {
-    const ehDinamica = g.tipo_cesta === 'dinamica' || (!g.tipo_cesta && g.termo_chave) || (!g.tipo_cesta && !g.termo_chave);
-    const termo = (g.termo_chave || (ehDinamica ? g.nome_grupo : '')).trim();
-
     // 1. Obter exclusões (Lista Negra) deste grupo
     const exclusoesRows = await allQuery(`
       SELECT p.id, p.nome_padrao, p.unidade, p.codigo, eg.motivo, eg.created_at as bloqueado_em
@@ -1069,10 +1066,24 @@ async function listarGruposComparacao() {
 
     const idsBloqueadosSet = new Set(exclusoesRows.map(e => e.id));
 
+    // 2. Obter produtos explicitamente selecionados para a cesta
+    const prodsExplicitos = await allQuery(`
+      SELECT p.id, p.nome_padrao, p.unidade, p.codigo,
+             ig.created_at as adicionado_em
+      FROM itens_grupo_comparacao ig
+      JOIN produtos p ON ig.produto_id = p.id
+      WHERE ig.grupo_id = ?
+      ORDER BY p.nome_padrao ASC
+    `, [g.id]);
+
     let produtos = [];
 
-    if (ehDinamica && termo) {
-      // Busca dinâmica por palavras-chave em todo o catálogo de produtos de Atibaia
+    if (prodsExplicitos.length > 0) {
+      // Se o usuário selecionou produtos específicos (via Assistente ou + Cesta), usa EXATAMENTE esses produtos
+      produtos = prodsExplicitos.filter(p => !idsBloqueadosSet.has(p.id));
+    } else if (g.termo_chave || g.nome_grupo) {
+      // Fallback dinâmico apenas se a cesta não tiver produtos explícitos cadastrados
+      const termo = (g.termo_chave || g.nome_grupo).trim();
       const palavras = termo.split(/\s+/).filter(Boolean);
       const whereClause = palavras.map(() => 'p.nome_padrao LIKE ?').join(' AND ');
       const params = palavras.map(p => `%${p}%`);
@@ -1084,34 +1095,7 @@ async function listarGruposComparacao() {
         ORDER BY p.nome_padrao ASC
       `, params);
 
-      // Também inclui produtos adicionados explicitamente caso existam
-      const prodsExplicitos = await allQuery(`
-        SELECT p.id, p.nome_padrao, p.unidade, p.codigo
-        FROM itens_grupo_comparacao ig
-        JOIN produtos p ON ig.produto_id = p.id
-        WHERE ig.grupo_id = ?
-        ORDER BY p.nome_padrao ASC
-      `, [g.id]);
-
-      const mapaTodos = new Map();
-      prodsDinamicos.forEach(p => {
-        if (!idsBloqueadosSet.has(p.id)) mapaTodos.set(p.id, p);
-      });
-      prodsExplicitos.forEach(p => {
-        if (!idsBloqueadosSet.has(p.id)) mapaTodos.set(p.id, p);
-      });
-
-      produtos = Array.from(mapaTodos.values());
-    } else {
-      // Cesta Estática tradicional
-      produtos = await allQuery(`
-        SELECT p.id, p.nome_padrao, p.unidade, p.codigo,
-               ig.created_at as adicionado_em
-        FROM itens_grupo_comparacao ig
-        JOIN produtos p ON ig.produto_id = p.id
-        WHERE ig.grupo_id = ?
-        ORDER BY p.nome_padrao ASC
-      `, [g.id]);
+      produtos = prodsDinamicos.filter(p => !idsBloqueadosSet.has(p.id));
     }
 
     const prodsComDetalhesRaw = await Promise.all(produtos.map(async (prod) => {
@@ -1178,8 +1162,8 @@ async function listarGruposComparacao() {
       id: g.id,
       nome_grupo: g.nome_grupo,
       descricao: g.descricao,
-      tipo_cesta: ehDinamica ? 'dinamica' : 'estatica',
-      termo_chave: termo,
+      tipo_cesta: g.tipo_cesta || 'dinamica',
+      termo_chave: g.termo_chave || '',
       created_at: g.created_at,
       total_produtos: prodsComDetalhes.length,
       vencedor,
@@ -1343,8 +1327,19 @@ async function obterListaCompras(listaId, usuarioId = 1) {
       const exclRows = await allQuery('SELECT produto_id FROM exclusoes_grupo_comparacao WHERE grupo_id = ?', [item.grupo_id]);
       const idsBloqueados = new Set(exclRows.map(e => e.produto_id));
 
+      const prodsExplicitos = await allQuery(`
+        SELECT p.id, p.nome_padrao, p.unidade, p.codigo
+        FROM itens_grupo_comparacao ig
+        JOIN produtos p ON ig.produto_id = p.id
+        WHERE ig.grupo_id = ?
+        ORDER BY p.nome_padrao ASC
+      `, [item.grupo_id]);
+
       let prods = [];
-      if (ehDinamica && termo) {
+      if (prodsExplicitos.length > 0) {
+        prods = prodsExplicitos.filter(p => !idsBloqueados.has(p.id));
+      } else if (item.termo_chave || item.nome_grupo) {
+        const termo = (item.termo_chave || item.nome_grupo).trim();
         const palavras = termo.split(/\s+/).filter(Boolean);
         const whereClause = palavras.map(() => 'p.nome_padrao LIKE ?').join(' AND ');
         const params = palavras.map(p => `%${p}%`);
@@ -1353,26 +1348,10 @@ async function obterListaCompras(listaId, usuarioId = 1) {
           SELECT p.id, p.nome_padrao, p.unidade, p.codigo
           FROM produtos p
           WHERE ${whereClause}
+          ORDER BY p.nome_padrao ASC
         `, params);
 
-        const prodsExplicitos = await allQuery(`
-          SELECT p.id, p.nome_padrao, p.unidade, p.codigo
-          FROM itens_grupo_comparacao ig
-          JOIN produtos p ON ig.produto_id = p.id
-          WHERE ig.grupo_id = ?
-        `, [item.grupo_id]);
-
-        const mapa = new Map();
-        prodsDinamicos.forEach(p => { if (!idsBloqueados.has(p.id)) mapa.set(p.id, p); });
-        prodsExplicitos.forEach(p => { if (!idsBloqueados.has(p.id)) mapa.set(p.id, p); });
-        prods = Array.from(mapa.values());
-      } else {
-        prods = await allQuery(`
-          SELECT p.id, p.nome_padrao, p.unidade, p.codigo
-          FROM itens_grupo_comparacao ig
-          JOIN produtos p ON ig.produto_id = p.id
-          WHERE ig.grupo_id = ?
-        `, [item.grupo_id]);
+        prods = prodsDinamicos.filter(p => !idsBloqueados.has(p.id));
       }
 
       const pIds = prods.map(p => p.id);
@@ -1546,15 +1525,23 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
   for (const item of itens) {
     if (item.grupo_id) {
       if (!gruposMap.has(item.grupo_id)) {
-        const ehDinamica = item.tipo_cesta === 'dinamica' || (!item.tipo_cesta && item.termo_chave) || (!item.tipo_cesta && !item.termo_chave);
-        const termo = (item.termo_chave || (ehDinamica ? item.nome_grupo : '') || '').trim();
-
         // Exclusões
         const exclRows = await allQuery('SELECT produto_id FROM exclusoes_grupo_comparacao WHERE grupo_id = ?', [item.grupo_id]);
         const idsBloqueados = new Set(exclRows.map(e => e.produto_id));
 
+        const prodsExplicitos = await allQuery(`
+          SELECT p.id, p.nome_padrao, p.unidade, p.codigo
+          FROM itens_grupo_comparacao ig
+          JOIN produtos p ON ig.produto_id = p.id
+          WHERE ig.grupo_id = ?
+          ORDER BY p.nome_padrao ASC
+        `, [item.grupo_id]);
+
         let prods = [];
-        if (ehDinamica && termo) {
+        if (prodsExplicitos.length > 0) {
+          prods = prodsExplicitos.filter(p => !idsBloqueados.has(p.id));
+        } else if (item.termo_chave || item.nome_grupo) {
+          const termo = (item.termo_chave || item.nome_grupo).trim();
           const palavras = termo.split(/\s+/).filter(Boolean);
           const whereClause = palavras.map(() => 'p.nome_padrao LIKE ?').join(' AND ');
           const params = palavras.map(p => `%${p}%`);
@@ -1563,26 +1550,10 @@ async function otimizarListaCompras(listaId = null, itensAdHoc = null) {
             SELECT p.id, p.nome_padrao, p.unidade, p.codigo
             FROM produtos p
             WHERE ${whereClause}
+            ORDER BY p.nome_padrao ASC
           `, params);
 
-          const prodsExplicitos = await allQuery(`
-            SELECT p.id, p.nome_padrao, p.unidade, p.codigo
-            FROM itens_grupo_comparacao ig
-            JOIN produtos p ON ig.produto_id = p.id
-            WHERE ig.grupo_id = ?
-          `, [item.grupo_id]);
-
-          const mapa = new Map();
-          prodsDinamicos.forEach(p => { if (!idsBloqueados.has(p.id)) mapa.set(p.id, p); });
-          prodsExplicitos.forEach(p => { if (!idsBloqueados.has(p.id)) mapa.set(p.id, p); });
-          prods = Array.from(mapa.values());
-        } else {
-          prods = await allQuery(`
-            SELECT p.id, p.nome_padrao, p.unidade, p.codigo
-            FROM itens_grupo_comparacao ig
-            JOIN produtos p ON ig.produto_id = p.id
-            WHERE ig.grupo_id = ?
-          `, [item.grupo_id]);
+          prods = prodsDinamicos.filter(p => !idsBloqueados.has(p.id));
         }
 
         gruposMap.set(item.grupo_id, prods);
