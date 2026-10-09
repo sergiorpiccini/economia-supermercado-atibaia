@@ -1025,17 +1025,34 @@ function fecharModalCatalogo() {
   document.getElementById('catalogo-produtos-modal').classList.add('hidden');
 }
 
+let timeoutFiltroCatalogo = null;
 function filtrarCatalogoProdutos(filtro) {
+  clearTimeout(timeoutFiltroCatalogo);
   const termo = (filtro || '').toLowerCase().trim();
   if (!termo) {
     renderizarCatalogo(catalogoProdutosCache);
     return;
   }
+  
+  // Filtro rápido no cache local
   const filtrados = catalogoProdutosCache.filter(p => 
     (p.nome_padrao && p.nome_padrao.toLowerCase().includes(termo)) ||
     (p.codigo && p.codigo.includes(termo))
   );
   renderizarCatalogo(filtrados);
+
+  // Busca também na API com debounce para garantir todos os registros do banco de dados
+  timeoutFiltroCatalogo = setTimeout(async () => {
+    try {
+      const response = await fetch(`/api/produtos?q=${encodeURIComponent(termo)}`);
+      const data = await response.json();
+      if (data.sucesso && data.produtos) {
+        renderizarCatalogo(data.produtos);
+      }
+    } catch (err) {
+      console.error("Erro na busca remota do catálogo:", err);
+    }
+  }, 200);
 }
 
 function renderizarCatalogo(produtos) {
@@ -1118,6 +1135,8 @@ function renderizarCatalogo(produtos) {
 function abrirHistoricoDeProduto(prodId, nomePadrao) {
   fecharModalCatalogo();
   document.getElementById('busca-produto-input').value = nomePadrao;
+  const dropdown = document.getElementById('dropdown-busca-historico');
+  if (dropdown) dropdown.classList.add('hidden');
   buscarHistoricoProduto(prodId);
   window.scrollTo({ top: document.getElementById('busca-produto-input').offsetTop - 80, behavior: 'smooth' });
 }
@@ -1125,6 +1144,7 @@ function abrirHistoricoDeProduto(prodId, nomePadrao) {
 
 // ==================== GRUPOS / CESTAS DE COMPARAÇÃO DE MARCAS ====================
 let produtoSelecionadoParaGrupo = null;
+const timeoutsBuscaCesta = {};
 
 async function carregarGruposComparacao() {
   const container = document.getElementById('grupos-comparacao-container');
@@ -1179,7 +1199,7 @@ async function carregarGruposComparacao() {
       } else {
         vencedorHtml = `
           <div class="p-3 bg-white rounded-lg border border-slate-200 text-center text-xs text-slate-400 italic">
-            Nenhum produto adicionado a esta cesta ainda.
+            Nenhum produto adicionado a esta cesta ainda. Digite o nome do produto abaixo para adicionar.
           </div>
         `;
       }
@@ -1222,8 +1242,8 @@ async function carregarGruposComparacao() {
             ${grupo.descricao ? `<p class="text-[11px] text-slate-500 mt-0.5">${escapeHtml(grupo.descricao)}</p>` : ''}
           </div>
           <div class="flex items-center gap-1">
-            <button onclick="abrirModalCatalogoProdutos()" class="px-2.5 py-1 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-lg transition flex items-center gap-1">
-              <i data-lucide="plus" class="w-3 h-3"></i> Adicionar Itens
+            <button onclick="abrirModalCatalogoProdutos()" class="px-2.5 py-1 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-lg transition flex items-center gap-1" title="Ver catálogo geral">
+              <i data-lucide="package-search" class="w-3 h-3"></i> Catálogo
             </button>
             <button onclick="excluirGrupo(${grupo.id})" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition" title="Excluir Cesta">
               <i data-lucide="trash" class="w-3.5 h-3.5"></i>
@@ -1241,6 +1261,21 @@ async function carregarGruposComparacao() {
             </div>
           </div>
         ` : ''}
+
+        <!-- Busca Rápida Inline para Adicionar Produtos na Cesta -->
+        <div class="relative pt-2 border-t border-slate-200/80">
+          <div class="relative">
+            <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5"></i>
+            <input type="text" 
+                   id="cesta-busca-input-${grupo.id}" 
+                   oninput="buscarProdutosParaCesta(${grupo.id}, this.value)" 
+                   placeholder="🔍 Buscar para adicionar nesta cesta (ex: Sabonete Albany, Lux, Dove, Nivea)..." 
+                   class="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none transition shadow-2xs" 
+                   autocomplete="off" />
+          </div>
+          <div id="cesta-dropdown-${grupo.id}" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto z-30 divide-y divide-slate-100">
+          </div>
+        </div>
       `;
 
       container.appendChild(card);
@@ -1251,6 +1286,67 @@ async function carregarGruposComparacao() {
   } catch (err) {
     console.error("Erro ao carregar grupos:", err);
   }
+}
+
+// Busca rápida autocomplete inline para adicionar produto direto na cesta
+function buscarProdutosParaCesta(grupoId, termo) {
+  clearTimeout(timeoutsBuscaCesta[grupoId]);
+  const dropdown = document.getElementById(`cesta-dropdown-${grupoId}`);
+  if (!dropdown) return;
+  const q = (termo || '').trim();
+
+  if (q.length < 2) {
+    dropdown.classList.add('hidden');
+    dropdown.innerHTML = '';
+    return;
+  }
+
+  dropdown.innerHTML = `
+    <div class="p-2.5 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+      <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-emerald-600"></div>
+      <span>Buscando produtos...</span>
+    </div>
+  `;
+  dropdown.classList.remove('hidden');
+
+  timeoutsBuscaCesta[grupoId] = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/produtos/autocomplete?q=${encodeURIComponent(q)}&limite=30`);
+      const data = await res.json();
+      if (!data.sucesso || !data.produtos || data.produtos.length === 0) {
+        dropdown.innerHTML = `
+          <div class="p-2.5 text-center text-xs text-slate-500">
+            Nenhum produto encontrado com "${escapeHtml(q)}".
+          </div>
+        `;
+        dropdown.classList.remove('hidden');
+        return;
+      }
+
+      dropdown.innerHTML = data.produtos.map(p => {
+        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}` : '';
+        const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
+        const precosTexto = [menor, medio].filter(Boolean).join(' • ');
+
+        return `
+          <div class="p-2.5 hover:bg-emerald-50/70 transition flex items-center justify-between gap-2 border-b border-slate-100 last:border-b-0">
+            <div class="min-w-0 flex-1">
+              <p class="font-bold text-slate-900 text-xs truncate">${escapeHtml(p.nome_padrao)}</p>
+              <p class="text-[10px] text-slate-500 truncate">${escapeHtml(precosTexto || 'Preço registrado em Atibaia')}</p>
+            </div>
+            <button onclick="adicionarProdutoAoGrupo(${grupoId}, ${p.id})" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0 shadow-2xs">
+              <i data-lucide="plus" class="w-3 h-3"></i> + Cesta
+            </button>
+          </div>
+        `;
+      }).join('');
+
+      dropdown.classList.remove('hidden');
+      lucide.createIcons();
+    } catch (err) {
+      console.error('Erro na busca de produtos para cesta:', err);
+    }
+  }, 100);
 }
 
 // Modal Criar Grupo
@@ -1362,7 +1458,12 @@ async function adicionarProdutoAoGrupo(grupoId, produtoId) {
     if (!data.sucesso) throw new Error(data.erro);
 
     fecharModalAddProdutoGrupo();
-    alert("Produto adicionado à cesta com sucesso!");
+    // Limpa input e dropdown da cesta se existirem
+    const inputCesta = document.getElementById(`cesta-busca-input-${grupoId}`);
+    if (inputCesta) inputCesta.value = '';
+    const dropdownCesta = document.getElementById(`cesta-dropdown-${grupoId}`);
+    if (dropdownCesta) dropdownCesta.classList.add('hidden');
+
     await carregarGruposComparacao();
   } catch (err) {
     alert(`Erro ao adicionar produto: ${err.message}`);
@@ -1384,6 +1485,7 @@ async function removerProdutoDoGrupo(grupoId, produtoId) {
 
 // ==================== HISTÓRICO DE PREÇO COM GRÁFICO DE LINHA DO TEMPO ====================
 let graficoHistoricoInstancia = null;
+let timeoutBuscaHistorico = null;
 
 const CORES_MERCADOS = [
   { border: '#2563eb', bg: 'rgba(37, 99, 235, 0.15)', name: 'blue' },
@@ -1394,6 +1496,77 @@ const CORES_MERCADOS = [
   { border: '#db2777', bg: 'rgba(219, 39, 119, 0.15)', name: 'pink' },
   { border: '#0891b2', bg: 'rgba(8, 145, 178, 0.15)', name: 'cyan' }
 ];
+
+// Busca autocomplete em tempo real para a barra de histórico de preços
+function buscarAutocompleteHistorico(termo) {
+  clearTimeout(timeoutBuscaHistorico);
+  const dropdown = document.getElementById('dropdown-busca-historico');
+  if (!dropdown) return;
+  const q = (termo || '').trim();
+
+  if (q.length < 2) {
+    dropdown.classList.add('hidden');
+    dropdown.innerHTML = '';
+    return;
+  }
+
+  dropdown.innerHTML = `
+    <div class="p-3 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+      <div class="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-emerald-600"></div>
+      <span>Buscando "${escapeHtml(q)}"...</span>
+    </div>
+  `;
+  dropdown.classList.remove('hidden');
+
+  timeoutBuscaHistorico = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/produtos/autocomplete?q=${encodeURIComponent(q)}&limite=30`);
+      const data = await res.json();
+      if (!data.sucesso || !data.produtos || data.produtos.length === 0) {
+        dropdown.innerHTML = `
+          <div class="p-3 text-center text-xs text-slate-500">
+            Nenhum produto encontrado com "${escapeHtml(q)}".
+          </div>
+        `;
+        dropdown.classList.remove('hidden');
+        return;
+      }
+
+      dropdown.innerHTML = data.produtos.map(p => {
+        const menor = p.menor_preco ? `Menor: R$ ${Number(p.menor_preco).toFixed(2).replace('.', ',')}` : '';
+        const medio = p.preco_medio ? `Média: R$ ${Number(p.preco_medio).toFixed(2).replace('.', ',')}` : '';
+        const precosTexto = [menor, medio].filter(Boolean).join(' • ');
+
+        return `
+          <div onclick="selecionarProdutoHistorico(${p.id}, '${escapeHtml(p.nome_padrao).replace(/'/g, "\\'")}')" class="p-3 hover:bg-emerald-50/70 cursor-pointer transition flex items-center justify-between gap-2 group">
+            <div class="min-w-0 flex-1">
+              <p class="font-bold text-slate-900 text-xs truncate group-hover:text-emerald-700">${escapeHtml(p.nome_padrao)}</p>
+              <p class="text-[11px] text-slate-500 truncate">${escapeHtml(precosTexto || 'Preço registrado em Atibaia')}</p>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <span class="text-[10px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded uppercase">
+                ${escapeHtml(p.unidade || 'UN')}
+              </span>
+              <span class="text-xs text-emerald-600 font-semibold group-hover:translate-x-0.5 transition">&rarr;</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      dropdown.classList.remove('hidden');
+    } catch (err) {
+      console.error('Erro na busca autocomplete de histórico:', err);
+    }
+  }, 100);
+}
+
+function selecionarProdutoHistorico(prodId, nomePadrao) {
+  const input = document.getElementById('busca-produto-input');
+  if (input) input.value = nomePadrao;
+  const dropdown = document.getElementById('dropdown-busca-historico');
+  if (dropdown) dropdown.classList.add('hidden');
+  buscarHistoricoProduto(prodId);
+}
 
 // Buscar Histórico de Preço de um Produto
 async function buscarHistoricoProduto(prodIdOuTermo) {
@@ -2372,3 +2545,30 @@ function mostrarNotificacaoToast(msg) {
     toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
   }, 3200);
 }
+
+// Fechar dropdowns de autocomplete ao clicar fora
+document.addEventListener('click', (e) => {
+  // Dropdown de histórico
+  const dropHist = document.getElementById('dropdown-busca-historico');
+  const inputHist = document.getElementById('busca-produto-input');
+  if (dropHist && !dropHist.contains(e.target) && e.target !== inputHist) {
+    dropHist.classList.add('hidden');
+  }
+
+  // Dropdown de lista
+  const dropLista = document.getElementById('dropdown-busca-lista');
+  const inputLista = document.getElementById('input-busca-lista');
+  if (dropLista && !dropLista.contains(e.target) && e.target !== inputLista) {
+    dropLista.classList.add('hidden');
+  }
+
+  // Dropdowns de cestas
+  document.querySelectorAll('[id^="cesta-dropdown-"]').forEach(drop => {
+    const grupoId = drop.id.replace('cesta-dropdown-', '');
+    const inputCesta = document.getElementById(`cesta-busca-input-${grupoId}`);
+    if (!drop.contains(e.target) && e.target !== inputCesta) {
+      drop.classList.add('hidden');
+    }
+  });
+});
+

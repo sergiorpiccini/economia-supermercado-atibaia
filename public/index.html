@@ -535,14 +535,22 @@
 
       <!-- Comparador & Busca de Produto -->
       <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <h3 class="font-bold text-slate-800 flex items-center gap-2">
-          <i data-lucide="search" class="w-5 h-5 text-emerald-600"></i> Consultar Histórico de Produto Individual
-        </h3>
-        <div class="flex gap-2">
-          <input type="text" id="busca-produto-input" placeholder="Digite o nome de um produto (ex: Leite, Café, Arroz)..." class="flex-1 px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm" />
-          <button onclick="buscarHistoricoProduto()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl shadow-sm flex items-center gap-2 transition active:scale-95">
-            <i data-lucide="search" class="w-4 h-4"></i> Buscar
-          </button>
+        <div>
+          <h3 class="font-bold text-slate-800 flex items-center gap-2">
+            <i data-lucide="search" class="w-5 h-5 text-emerald-600"></i> Consultar Histórico de Produto Individual
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">Digite qualquer produto (ex: Sabonete, Café, Arroz, Leite) para ver o gráfico e a lista completa de marcas/versões.</p>
+        </div>
+        <div class="relative">
+          <div class="flex gap-2">
+            <input type="text" id="busca-produto-input" oninput="buscarAutocompleteHistorico(this.value)" onkeydown="if(event.key==='Enter') buscarHistoricoProduto()" placeholder="Digite o nome de um produto (ex: Sabonete, Café, Arroz)..." class="flex-1 px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm" autocomplete="off" />
+            <button onclick="buscarHistoricoProduto()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl shadow-sm flex items-center gap-2 transition active:scale-95">
+              <i data-lucide="search" class="w-4 h-4"></i> Buscar
+            </button>
+          </div>
+          <!-- Dropdown autocomplete de busca de histórico -->
+          <div id="dropdown-busca-historico" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-72 overflow-y-auto z-40 divide-y divide-slate-100">
+          </div>
         </div>
 
         <!-- Resultado da Busca do Produto -->
@@ -892,6 +900,6 @@
     App de Economia em Supermercados &copy; 2026 — SQLite & SEFAZ NFC-e
   </footer>
 
-  <script src="app.js?v=2.8"></script>
+  <script src="app.js?v=2.9"></script>
 </body>
 </html>
