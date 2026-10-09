@@ -133,11 +133,11 @@
         <button onclick="navigateView('lista')" id="nav-lista" class="nav-tab flex-1 min-w-[120px] py-3 text-center font-medium text-xs sm:text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition">
           <i data-lucide="list-checks" class="w-4 h-4"></i> <span>Otimizador Lista</span>
         </button>
+        <button onclick="navigateView('historico')" id="nav-historico" class="nav-tab flex-1 min-w-[110px] py-3 text-center font-medium text-xs sm:text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="trending-down" class="w-4 h-4"></i> <span>Preços & Cestas</span>
+        </button>
         <button onclick="navigateView('compras')" id="nav-compras" class="nav-tab flex-1 min-w-[110px] py-3 text-center font-medium text-xs sm:text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition">
           <i data-lucide="receipt" class="w-4 h-4"></i> <span>Minhas Compras</span>
-        </button>
-        <button onclick="navigateView('historico')" id="nav-historico" class="nav-tab flex-1 min-w-[110px] py-3 text-center font-medium text-xs sm:text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition">
-          <i data-lucide="trending-down" class="w-4 h-4"></i> <span>Preços</span>
         </button>
       </div>
     </nav>
@@ -148,73 +148,17 @@
       <!-- ==================== TELA 1: ESCANEAR NOTA ==================== -->
       <div id="view-scanner" class="space-y-6">
       
-      <!-- Card Principal de Captura -->
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <!-- Sub-abas de Entrada -->
-        <div class="flex border-b border-slate-200 bg-slate-100/70 p-1 text-sm font-medium">
-          <button id="tab-file" onclick="switchScannerTab('file')" class="tab-btn flex-1 py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 bg-white text-emerald-700 shadow-sm transition font-bold">
-            <i data-lucide="camera" class="w-4 h-4 text-emerald-600"></i> Tirar Foto (Câmera)
-          </button>
-          <button id="tab-manual" onclick="switchScannerTab('manual')" class="tab-btn flex-1 py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-slate-600 hover:text-slate-900 transition">
-            <i data-lucide="link" class="w-4 h-4"></i> Colar URL
-          </button>
-          <button id="tab-camera" onclick="switchScannerTab('camera')" class="tab-btn flex-1 py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-slate-600 hover:text-slate-900 transition">
-            <i data-lucide="video" class="w-4 h-4"></i> Vídeo Contínuo
-          </button>
+      <!-- Card Principal de Captura Rápida (Foco no Celular) -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden p-6 sm:p-8 text-center space-y-4">
+        <div class="border-2 border-dashed border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50 rounded-2xl p-8 sm:p-12 text-center transition cursor-pointer active:scale-98" onclick="document.getElementById('file-input').click()">
+          <input type="file" id="file-input" accept="image/*" capture="environment" class="hidden" onchange="handleFileUpload(event)" />
+          <div class="w-20 h-20 bg-emerald-600 hover:bg-emerald-700 text-white rounded-3xl flex items-center justify-center mx-auto shadow-lg shadow-emerald-600/25 mb-4 transition transform group-hover:scale-105">
+            <i data-lucide="camera" class="w-10 h-10"></i>
+          </div>
+          <p class="font-black text-lg sm:text-xl text-slate-900">Escanear / Tirar Foto do Cupom Fiscal</p>
+          <p class="text-xs sm:text-sm text-slate-500 mt-1 max-w-sm mx-auto">Toque para abrir a câmera do celular com leitura instantânea do QR Code da NFC-e</p>
         </div>
-
-        <!-- Conteúdo da Sub-Aba 1: Foto / Câmera Nativa -->
-        <div id="content-file" class="p-6 space-y-4">
-          <div class="border-2 border-dashed border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50 rounded-2xl p-8 text-center transition cursor-pointer active:scale-98" onclick="document.getElementById('file-input').click()">
-            <input type="file" id="file-input" accept="image/*" capture="environment" class="hidden" onchange="handleFileUpload(event)" />
-            <div class="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center mx-auto shadow-md mb-3">
-              <i data-lucide="camera" class="w-8 h-8"></i>
-            </div>
-            <p class="font-bold text-base text-slate-900">Toque aqui para Tirar Foto do Cupom</p>
-            <p class="text-xs text-slate-500 mt-1">Abre a câmera do celular com foco automático</p>
-          </div>
-          <div id="file-reader-container" class="hidden max-w-sm mx-auto"></div>
-        </div>
-
-        <!-- Conteúdo da Sub-Aba 2: Colar URL -->
-        <div id="content-manual" class="hidden p-6 space-y-4">
-          <label class="block text-sm font-medium text-slate-700">
-            URL da NFC-e (SEFAZ)
-          </label>
-          <div class="flex gap-2">
-            <input type="url" id="manual-url-input" placeholder="https://www.sefaz... ou link completo" class="flex-1 px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm" />
-            <button onclick="processManualUrl()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl shadow-sm flex items-center gap-2 transition active:scale-95">
-              <i data-lucide="arrow-right" class="w-4 h-4"></i> Extrair
-            </button>
-          </div>
-          <p class="text-xs text-slate-500">
-            Dica: Cole o link do QR Code da SEFAZ para extrair os itens.
-          </p>
-        </div>
-
-        <!-- Conteúdo da Sub-Aba 3: Scanner de Vídeo -->
-        <div id="content-camera" class="hidden p-6 space-y-4">
-          <div class="text-center">
-            <p class="text-sm text-slate-600">Aponte a câmera para o QR Code impresso no cupom fiscal.</p>
-          </div>
-          
-          <div class="relative max-w-sm mx-auto overflow-hidden rounded-xl bg-slate-950 border-2 border-emerald-500/50 shadow-inner aspect-square flex items-center justify-center">
-            <div id="qr-reader" class="w-full h-full"></div>
-            <div id="camera-placeholder" class="text-center p-4 text-slate-400">
-              <i data-lucide="scan-line" class="w-12 h-12 mx-auto mb-2 text-emerald-400 animate-pulse"></i>
-              <p class="text-sm">Clique no botão abaixo para iniciar a câmera</p>
-            </div>
-          </div>
-
-          <div class="flex justify-center gap-3">
-            <button id="btn-start-camera" onclick="startScanner()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl shadow-sm flex items-center gap-2 transition active:scale-95">
-              <i data-lucide="play" class="w-4 h-4"></i> Iniciar Vídeo
-            </button>
-            <button id="btn-stop-camera" onclick="stopScanner()" class="hidden px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl shadow-sm flex items-center gap-2 transition active:scale-95">
-              <i data-lucide="square" class="w-4 h-4"></i> Parar Vídeo
-            </button>
-          </div>
-        </div>
+        <div id="file-reader-container" class="hidden max-w-sm mx-auto"></div>
       </div>
 
       <!-- Status & Loader -->
@@ -1012,6 +956,6 @@
     App de Economia em Supermercados &copy; 2026 — SQLite & SEFAZ NFC-e
   </footer>
 
-  <script src="app.js?v=3.3"></script>
+  <script src="app.js?v=3.4"></script>
 </body>
 </html>

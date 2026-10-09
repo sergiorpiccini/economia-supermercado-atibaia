@@ -1270,9 +1270,15 @@ async function carregarGruposComparacao() {
         ${vencedorHtml}
 
         ${grupo.produtos && grupo.produtos.length > 0 ? `
-          <div class="space-y-1.5 pt-1">
-            <span class="text-[10px] font-bold text-slate-500 uppercase block">Marcas & Produtos nesta cesta (${grupo.produtos.length}):</span>
-            <div class="space-y-1.5">
+          <div class="pt-1">
+            <button onclick="alternarAcordeaoCesta(${grupo.id})" id="btn-acordeao-cesta-${grupo.id}" class="w-full py-2 px-3 bg-white hover:bg-slate-100/80 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-between transition cursor-pointer shadow-2xs">
+              <span class="flex items-center gap-1.5">
+                <i data-lucide="layers" class="w-3.5 h-3.5 text-emerald-600"></i>
+                Ver todas as ${grupo.produtos.length} marcas equivalentes
+              </span>
+              <i data-lucide="chevron-down" id="icone-acordeao-cesta-${grupo.id}" class="w-4 h-4 text-slate-400 transition-transform"></i>
+            </button>
+            <div id="cesta-lista-marcas-${grupo.id}" class="hidden space-y-1.5 pt-2">
               ${produtosLinhas}
             </div>
           </div>
@@ -1301,6 +1307,21 @@ async function carregarGruposComparacao() {
 
   } catch (err) {
     console.error("Erro ao carregar grupos:", err);
+  }
+}
+
+// Alternar acordeão de marcas da Cesta
+function alternarAcordeaoCesta(grupoId) {
+  const container = document.getElementById(`cesta-lista-marcas-${grupoId}`);
+  const icone = document.getElementById(`icone-acordeao-cesta-${grupoId}`);
+  if (!container) return;
+  const estaOculto = container.classList.contains('hidden');
+  if (estaOculto) {
+    container.classList.remove('hidden');
+    if (icone) icone.classList.add('rotate-180');
+  } else {
+    container.classList.add('hidden');
+    if (icone) icone.classList.remove('rotate-180');
   }
 }
 
@@ -2592,6 +2613,21 @@ function alternarAbaOtimizador(aba) {
   lucide.createIcons();
 }
 
+// Alternar visualização de itens do mercado no ranking do Radar da Economia
+function alternarDetalhesMercadoRanking(mercadoId) {
+  const drawer = document.getElementById(`detalhes-ranking-mercado-${mercadoId}`);
+  const icon = document.getElementById(`icone-ranking-mercado-${mercadoId}`);
+  if (!drawer) return;
+  const isHidden = drawer.classList.contains('hidden');
+  if (isHidden) {
+    drawer.classList.remove('hidden');
+    if (icon) icon.classList.add('rotate-180');
+  } else {
+    drawer.classList.add('hidden');
+    if (icon) icon.classList.remove('rotate-180');
+  }
+}
+
 // Renderiza todas as visões do otimizador
 function renderizarOtimizacao(analise) {
   if (!analise || analise.totalItens === 0) return;
@@ -2608,26 +2644,64 @@ function renderizarOtimizacao(analise) {
         const corCard = ehMelhor ? 'border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20' : 'border-slate-200 bg-white';
         const corTotal = ehMelhor ? 'text-emerald-700' : 'text-slate-900';
 
+        const itensDisponiveis = (m.detalhesItens || []).filter(d => d.disponivel);
+        const itensFaltantes = (m.detalhesItens || []).filter(d => !d.disponivel);
+
         return `
-          <div class="p-4 rounded-2xl border ${corCard} shadow-xs flex flex-col justify-between gap-3 transition">
-            <div class="space-y-1">
-              <div class="flex items-center justify-between gap-2">
-                <span class="font-bold text-slate-900 text-sm truncate">${escapeHtml(m.mercadoNome)}</span>
-                ${selo ? `<span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${ehMelhor ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700'}">${selo}</span>` : ''}
+          <div class="rounded-2xl border ${corCard} shadow-xs transition overflow-hidden">
+            <div onclick="alternarDetalhesMercadoRanking(${m.mercadoId})" class="p-4 cursor-pointer hover:bg-slate-50/60 transition flex flex-col justify-between gap-3">
+              <div class="space-y-1">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-bold text-slate-900 text-sm truncate">${escapeHtml(m.mercadoNome)}</span>
+                  ${selo ? `<span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${ehMelhor ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700'}">${selo}</span>` : ''}
+                </div>
+                <p class="text-[11px] text-slate-500 truncate">${escapeHtml(m.endereco || 'Atibaia/SP')}</p>
               </div>
-              <p class="text-[11px] text-slate-500 truncate">${escapeHtml(m.endereco || 'Atibaia/SP')}</p>
+
+              <div class="pt-2 border-t border-slate-100/80 flex items-end justify-between">
+                <div>
+                  <span class="text-[11px] text-slate-500 block">Total da Cesta</span>
+                  <span class="text-xl font-black ${corTotal}">R$ ${m.totalCesta.toFixed(2).replace('.', ',')}</span>
+                </div>
+                <div class="text-right flex items-center gap-1.5">
+                  <div>
+                    <span class="text-xs font-semibold ${m.pctDisponibilidade === 100 ? 'text-emerald-700' : 'text-amber-700'} block">
+                      ${m.itensEncontrados} de ${m.totalItensLista} itens
+                    </span>
+                    <span class="text-[10px] text-slate-400">(${m.pctDisponibilidade}% disponível)</span>
+                  </div>
+                  <i id="icone-ranking-mercado-${m.mercadoId}" data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform duration-200"></i>
+                </div>
+              </div>
             </div>
 
-            <div class="pt-2 border-t border-slate-100/80 flex items-end justify-between">
-              <div>
-                <span class="text-[11px] text-slate-500 block">Total da Cesta</span>
-                <span class="text-xl font-black ${corTotal}">R$ ${m.totalCesta.toFixed(2).replace('.', ',')}</span>
+            <!-- Drawer com Detalhes dos Itens do Mercado -->
+            <div id="detalhes-ranking-mercado-${m.mercadoId}" class="hidden border-t border-slate-200 bg-slate-50/80 p-3 space-y-2">
+              <div class="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+                <span>Itens em ${escapeHtml(m.mercadoNome)}</span>
+                <span class="text-slate-400 font-normal text-[10px]">${m.itensEncontrados} de ${m.totalItensLista} encontrados</span>
               </div>
-              <div class="text-right">
-                <span class="text-xs font-semibold ${m.pctDisponibilidade === 100 ? 'text-emerald-700' : 'text-amber-700'} block">
-                  ${m.itensEncontrados} de ${m.totalItensLista} itens
-                </span>
-                <span class="text-[10px] text-slate-400">(${m.pctDisponibilidade}% disponível)</span>
+
+              <div class="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                ${itensDisponiveis.map(it => `
+                  <div class="p-2 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between gap-2 text-xs shadow-2xs">
+                    <div class="min-w-0 flex-1">
+                      <div class="font-bold text-slate-900 truncate">${escapeHtml(it.produtoEscolhidoNome || it.nome)}</div>
+                      <div class="text-[10px] text-slate-500">${it.quantidade} un x R$ ${it.precoUnitario.toFixed(2).replace('.', ',')}</div>
+                    </div>
+                    <span class="font-bold text-slate-900 shrink-0">R$ ${it.subtotal.toFixed(2).replace('.', ',')}</span>
+                  </div>
+                `).join('')}
+
+                ${itensFaltantes.map(it => `
+                  <div class="p-2 bg-rose-50/50 rounded-xl border border-rose-100/80 flex items-center justify-between gap-2 text-xs opacity-75">
+                    <div class="min-w-0 flex-1">
+                      <div class="font-medium text-slate-700 truncate">${escapeHtml(it.nome)}</div>
+                      <div class="text-[10px] text-rose-600">Sem preço recente registrado</div>
+                    </div>
+                    <span class="text-[9px] font-bold text-rose-600 bg-rose-100/70 px-1.5 py-0.5 rounded">Faltante</span>
+                  </div>
+                `).join('')}
               </div>
             </div>
           </div>
