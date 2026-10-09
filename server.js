@@ -401,7 +401,8 @@ app.get('/api/produtos/:id/historico', async (req, res) => {
 app.get('/api/produtos/autocomplete', async (req, res) => {
   try {
     const q = req.query.q || req.query.busca || req.query.termo || '';
-    const produtos = await db.buscarProdutosAutocomplete(q);
+    const limite = parseInt(req.query.limite) || 100;
+    const produtos = await db.buscarProdutosAutocomplete(q, limite);
     res.json({ sucesso: true, produtos });
   } catch (error) {
     res.status(500).json({ sucesso: false, erro: error.message });
