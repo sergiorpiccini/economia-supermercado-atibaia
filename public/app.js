@@ -2969,7 +2969,10 @@ function atualizarContadorSelecaoMassa() {
 
 async function salvarCestaMassa() {
   const produtosSelecionados = produtosEncontradosMassa.filter(p => p.selecionado);
+  const produtosNaoSelecionados = produtosEncontradosMassa.filter(p => !p.selecionado);
+
   const produtoIds = produtosSelecionados.map(p => p.id);
+  const produtoIdsExcluidos = produtosNaoSelecionados.map(p => p.id);
 
   if (produtoIds.length === 0) {
     alert("Por favor, selecione pelo menos um produto ou marque uma das opções nos filtros de marcas.");
@@ -2978,6 +2981,7 @@ async function salvarCestaMassa() {
 
   try {
     let grupoId = grupoIdMassaDestino;
+    const termoBusca = (document.getElementById('massa-busca-termo')?.value || '').trim();
 
     if (!grupoId) {
       const inputNome = document.getElementById('massa-cesta-nome');
@@ -2988,13 +2992,15 @@ async function salvarCestaMassa() {
         return;
       }
 
-      // Cria a cesta dinâmica
+      // Cria a cesta dinâmica associada ao termo de busca
       const resGrupo = await fetch('/api/grupos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nome,
-          descricao: `Criada com ${produtoIds.length} marcas equivalentes`
+          descricao: `Criada com ${produtoIds.length} marcas selecionadas`,
+          tipo_cesta: 'dinamica',
+          termo_chave: termoBusca || nome
         })
       });
       const dataGrupo = await resGrupo.json();
@@ -3002,17 +3008,20 @@ async function salvarCestaMassa() {
       grupoId = dataGrupo.grupo.id;
     }
 
-    // Adiciona todos os produtos selecionados em massa (Bulk)
+    // Adiciona todos os produtos selecionados e bloqueia os desmarcados na Lista Negra
     const resBulk = await fetch(`/api/grupos/${grupoId}/produtos/bulk`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ produtoIds })
+      body: JSON.stringify({ 
+        produtoIds,
+        produtoIdsExcluidos
+      })
     });
     const dataBulk = await resBulk.json();
     if (!dataBulk.sucesso) throw new Error(dataBulk.erro);
 
     fecharModalCestaMassa();
-    mostrarNotificacaoToast(`✨ Cesta criada com sucesso com ${produtoIds.length} marcas!`);
+    mostrarNotificacaoToast(`✨ Cesta salva com ${produtoIds.length} produtos selecionados e ${produtoIdsExcluidos.length} exclusões!`);
     await carregarGruposComparacao();
   } catch (err) {
     alert(`Erro ao salvar cesta: ${err.message}`);
