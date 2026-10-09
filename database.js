@@ -1256,7 +1256,7 @@ async function adicionarItemListaCompras(listaId, produtoId, quantidade = 1, obs
       return { id: itemExistente.id, atualizado: true, novaQtd };
     }
     const res = await runQuery(
-      'INSERT INTO itens_lista_compras (lista_id, produto_id, grupo_id, quantidade, observacao) VALUES (?, NULL, ?, ?, ?)',
+      'INSERT INTO itens_lista_compras (lista_id, produto_id, grupo_id, quantidade, observacao) VALUES (?, 0, ?, ?, ?)',
       [listaId, grupoId, qtd, observacao || null]
     );
     await runQuery("UPDATE listas_compras SET updated_at = datetime('now') WHERE id = ?", [listaId]);
