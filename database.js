@@ -1163,6 +1163,7 @@ async function listarGruposComparacao() {
         ultimoMercado: ultimoRegistro ? ultimoRegistro.mercado : '',
         melhorMercado: melhorOfertaVigente ? melhorOfertaVigente.mercado : (ultimoRegistro ? ultimoRegistro.mercado : ''),
         melhorEndereco: melhorOfertaVigente ? melhorOfertaVigente.endereco : '',
+        dataRegistroMelhorPreco: melhorOfertaVigente ? melhorOfertaVigente.dataRegistro : (ultimoRegistro ? ultimoRegistro.data_registro : null),
         totalRegistros: hist.length
       };
     }));
