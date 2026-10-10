@@ -1193,7 +1193,7 @@ async function carregarGruposComparacao() {
               <div>
                 <span class="text-[10px] uppercase tracking-wider font-bold text-emerald-800 block">Opção Mais Econômica na Cesta</span>
                 <span class="font-black text-xs text-slate-900 whitespace-normal break-words leading-tight block">${escapeHtml(v.nome_padrao)}</span>
-                <span class="text-[11px] text-emerald-800 block">no <strong>${escapeHtml(v.melhorMercado || v.ultimoMercado)}</strong> ${v.melhorEndereco ? `(${escapeHtml(v.melhorEndereco)})` : ''}</span>
+                <span class="text-[11px] text-emerald-800 block">no <strong>${escapeHtml(v.melhorMercado || v.ultimoMercado)}</strong> ${v.melhorEndereco ? `(${escapeHtml(v.melhorEndereco)})` : ''} ${v.dataRegistroMelhorPreco ? `<span class="inline-flex items-center gap-0.5 text-[10px] bg-emerald-200/90 text-emerald-900 px-1.5 py-0.5 rounded font-bold ml-1">🕒 em ${formatarDataRegistroCurta(v.dataRegistroMelhorPreco)}</span>` : ''}</span>
                 ${packVencedor}
               </div>
             </div>
@@ -1227,6 +1227,9 @@ async function carregarGruposComparacao() {
           const ehVencedor = grupo.vencedor && grupo.vencedor.id === p.id;
           const precoItem = p.menorPreco > 0 ? formatCurrency(p.menorPreco) : '--';
           const normTexto = p.textoNormalizado ? ` <span class="text-emerald-700 font-semibold">(${escapeHtml(p.textoNormalizado)})</span>` : '';
+          const dataObs = (p.dataRegistroMelhorPreco && p.menorPreco > 0)
+            ? `<span class="text-slate-400 font-normal ml-1">(${formatarDataRegistroCurta(p.dataRegistroMelhorPreco)})</span>`
+            : '';
           const packObs = (p.ehPack && p.valorOriginalPack && p.qtdPack > 1) 
             ? `<span class="text-[10px] text-slate-400 block font-normal">📦 Pack c/ ${p.qtdPack} un por ${formatCurrency(p.valorOriginalPack)}</span>` 
             : '';
@@ -1245,7 +1248,7 @@ async function carregarGruposComparacao() {
                   ${ehVencedor ? '⭐' : ''} ${escapeHtml(p.nome_padrao)}
                 </div>
                 <div class="text-[10px] text-slate-500 mt-0.5">
-                  Menor: <strong class="text-emerald-700">${precoItem}</strong>${normTexto} no ${escapeHtml(p.melhorMercado || 'Mercado')}
+                  Menor: <strong class="text-emerald-700">${precoItem}</strong>${normTexto} no ${escapeHtml(p.melhorMercado || 'Mercado')}${dataObs}
                   ${packObs}
                 </div>
               </div>
@@ -2038,6 +2041,20 @@ function copiarJson() {
 
 function formatCurrency(val) {
   return (val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function formatarDataRegistroCurta(dataStr) {
+  if (!dataStr) return '';
+  if (dataStr.includes('/')) {
+    const partes = dataStr.split(' ')[0].split('/');
+    if (partes.length >= 2) return `${partes[0]}/${partes[1]}`;
+    return dataStr.split(' ')[0];
+  }
+  if (dataStr.includes('-')) {
+    const partes = dataStr.split('T')[0].split(' ')[0].split('-');
+    if (partes.length === 3) return `${partes[2]}/${partes[1]}`;
+  }
+  return dataStr;
 }
 
 function escapeHtml(text) {
